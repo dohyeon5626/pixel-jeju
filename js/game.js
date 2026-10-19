@@ -3144,3 +3144,252 @@ function collectPickup(p, byShot) {
   burst(p.x, p.y - 4, 8, [C.org[3], C.org[2], C.yel[3]], 50, 0.4, 100);
 }
 
+// ═════════════════════════════════════════════════════════════
+//  업데이트
+// ═════════════════════════════════════════════════════════════
+function updateAmbient(dt) {
+  amb.t += dt;
+  Sound.setSpace(THEME === 'cave' ? 'cave' : 'open'); Sound.ambience('rain', state === 'play' ? (G && G.storm || 0) * 0.13 : 0);
+  Sound.ambience('surf', state === 'play' && ['coast', 'beach', 'iho'].includes(THEME) ? 0.05 : 0); Sound.ambience('falls', state === 'play' && ['jeongbang', 'cheonji'].includes(THEME) ? 0.045 : 0);   // 바닷가 파도 · 폭포 물소리   // 만장굴은 크게 울림 · 태풍엔 빗소리
+  if (THEME === 'cave' && state !== 'loading' && state !== 'pause' && Math.random() < dt * 0.45) Sound.sfx.drip();   // 동굴 물방울
+  for (const c of amb.clouds) { c.x += (c.v * (G && G.wx && G.wx.id === 'typhoon' ? 3 : 1) + (G ? G.wind * 0.12 : 0)) * dt; if (c.x > W + 20) { c.x = -120; c.y = rand(-VOFF + 18, 50); } }
+  if (P) amb.camX = lerp(amb.camX, clamp((P.x - W / 2) * 0.12, -20, 20), 1 - Math.pow(0.02, dt));
+}
+
+function updateWorld(dt) {
+  // 생존 시간은 tick()에서 실제 시간으로 잼
+  if (!P.dead) updateFlow(dt);
+  if (G.choice) return;   // 강화 선택이 열리면 그 즉시 멈춤
+  updatePlayer(G.mode === 'run' ? dt / G.speed : dt);
+  G.wind = approach(G.wind, G.windTarget, 110 * dt);
+  G.hz = G.hz.filter(h => h.update(dt) !== false);
+  G.shots = G.shots.filter(s => s.update(dt) !== false);
+  G.pickups = G.pickups.filter(p => p.update(dt) !== false);
+  if (B) { G.curPat = B.pat || null; B.update(G.mode === 'run' ? dt / G.speed : dt); G.curPat = null; }
+  if (G.spawnQ.length) {   // 공격은 8분음표 박자에 맞춰 나옴 (최대 0.3초까지만 기다림)
+    G.spawnHold = (G.spawnHold || 0) + dt;
+    const f8 = (beatNow() * 2) % 1;
+    if (f8 < 0.2 || G.spawnHold > 0.3 || P.dead) { for (const h of G.spawnQ) G.hz.push(h); G.spawnQ.length = 0; G.spawnHold = 0; }
+  }
+  for (const w of G.warnings) { w.t += dt; if (w.t >= w.dur && !w.fired) { w.fired = true; G.curPat = w.pat; w.spawn(); G.curPat = null; } }
+  G.warnings = G.warnings.filter(w => !w.fired);
+  for (const d of G.decals) d.t += dt;
+  G.decals = G.decals.filter(d => d.t < d.life);
+  updateVolcano(dt);
+  updateFxList(dt);
+  const uiDt = G.mode === 'run' ? dt / G.speed : dt;
+  for (const p of G.pops) p.t += uiDt;
+  G.pops = G.pops.filter(p => p.t < 1);
+  for (const gh of G.ghosts) gh.life -= dt;
+  G.ghosts = G.ghosts.filter(gh => gh.life > 0);
+  G.comboT -= uiDt; if (G.comboT <= 0) G.combo = 0;
+  if (G.hint > 0 && G.mode === 'run') G.hint -= dt / G.speed;
+  if (pressed.jump || pressed.roll) G.hint = Math.min(G.hint, 1.5);
+  G.phase = approach(G.phase, G.phaseTarget, dt * 0.4);
+  G.trauma = Math.max(0, G.trauma - dt * 1.6);
+  if (G.kick) { const d = Math.exp(-dt * 18); G.kick.x *= d; G.kick.y *= d; }
+  G.flash = Math.max(0, G.flash - dt);
+  G.lightning = Math.max(0, (G.lightning || 0) - dt); if (G.boltFx) { G.boltFx.t -= dt; if (G.boltFx.t <= 0) G.boltFx = null; }
+  if ((G.stormHold || 0) > 0) G.stormHold -= dt; else if (G.storm > 0 && !G.patterns.some(p => p.kind === 'typhoon')) G.storm = Math.max(0, G.storm - dt * 1.2);   // 마이삭이 지나가면 하늘이 서서히 갬
+  if (G.wowFx) { G.wowFx.t += uiDt; if (G.wowFx.t > 1.6) G.wowFx = null; }
+  G.ammoPulse = Math.max(0, (G.ammoPulse || 0) - uiDt); if (G.mode === 'run') { G.omegiT = Math.max(0, (G.omegiT || 0) - uiDt); G.magnetT = Math.max(0, (G.magnetT || 0) - uiDt); } G.beatComboT = (G.beatComboT || 0) - uiDt; if (G.beatComboT <= 0) G.beatCombo = 0; Sound.setAccent((G.beatCombo || 0) >= 8);
+  { const bi = Math.floor(beatNow()); if (bi !== G.lastBeatI) { G.lastBeatI = bi; G.beatPulse = 1; } G.beatPulse = Math.max(0, (G.beatPulse || 0) - uiDt * 4); } G.waterPulse = Math.max(0, (G.waterPulse || 0) - uiDt); if (G.wave) { G.wave.t += uiDt; if (G.wave.t > 0.7) G.wave = null; } G.wxPulse = Math.max(0, (G.wxPulse || 0) - uiDt);
+  if (G.rapSub) G.rapSub.t += dt;
+  if (G.skill) { G.skill.t += uiDt; if (G.skill.t > (G.skill.hint ? 2.6 : 1.5)) G.skill = null; }
+  if (G.interp) { G.interp.t += uiDt; if (G.interp.t > 2.1) G.interp = null; }
+  checkHits();
+}
+function updateVolcano(dt) {
+  const v = G.volcano;
+  v.erupt = Math.max(0, v.erupt - dt);
+  v.glow = approach(v.glow, v.erupt > 0 ? 1 : G.phase >= 2.5 ? 0.45 : 0, dt * 0.8);
+  if (Math.random() < dt * (v.erupt > 0 ? 14 : 2.5 + v.glow * 4)) G.bgfx.push({ x: rand(-4, 4), y: 0, vx: rand(2, 8) + G.wind * 0.1, vy: rand(-14, -8), life: rand(2.2, 3.5), max: 3, r: v.erupt > 0 ? randi(2, 3) : 1.5, gr: v.erupt > 0 ? rand(1.5, 3) : rand(0.6, 1.1), dark: v.erupt > 0, kind: 'smoke' });
+  if (v.erupt > 0 && Math.random() < dt * 9) { G.bgfx.push({ x: rand(-4, 4), y: 1, vx: rand(-25, 25), vy: rand(-110, -60), grav: 60, life: 1.6, max: 1.6, kind: 'bomb' }); Sound.sfx.launch(); }
+  for (const p of G.bgfx) { p.life -= dt; p.vy += (p.grav || 0) * dt; p.x += p.vx * dt; p.y += p.vy * dt; if (p.kind === 'smoke') p.r += p.gr * dt; }
+  G.bgfx = G.bgfx.filter(p => p.life > 0);
+}
+function updateFxList(dt) {
+  for (const p of G.fx) {
+    p.life -= dt; p.vy += p.grav * dt;
+    if (p.drag) { p.vx *= 1 - p.drag * dt; p.vy *= 1 - p.drag * dt; }
+    if (p.kind === 'petal') p.vy += Math.sin(amb.t * 6 + p.x) * 60 * dt;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    if ((p.kind === 'px' || p.kind === 'chunk') && p.grav && p.y > GROUND + 1) { p.y = GROUND + 1; p.vy *= -0.35; p.vx *= 0.6; }
+    if (p.kind === 'rain' && p.y >= GROUND - 1) { p.life = 0; if (p.near && Math.random() < 0.5) for (const sd of [-1, 1]) fx({ x: p.x, y: GROUND - 2, vx: sd * rand(15, 35) + p.vx * 0.1, vy: -rand(30, 60), grav: 320, life: 0.18, kind: 'px', col: 'rgba(215,228,250,0.85)' }); }   // 땅에 닿은 빗방울이 톡
+  }
+  G.fx = G.fx.filter(p => p.life > 0);
+  if (G.fx.length > 600) G.fx.splice(0, G.fx.length - 600);
+}
+
+function tick(dt) {
+  updateAmbient(dt);
+  let stepped = false;
+  if (state === 'play') {
+    if (!P.dead && !G.choice && !G.iris) G.t += dt;
+    if (G.banners.length && !(bannerWait() && G.banners[0].t === 0)) { G.banners[0].t += dt; if (G.banners[0].t >= G.banners[0].dur) G.banners.shift(); }
+    if (G.iris) {
+      G.iris.t += dt;
+      if (!G.iris.done && G.iris.t >= G.iris.dur / 2) { G.iris.done = true; if (G.iris.mid) G.iris.mid(); warmScenes(); }
+      if (G.iris.t >= G.iris.dur) G.iris = null;
+    }
+    if (pressed.pause && !P.dead) setPause(true);
+    else if (G.choice) {   // 강화 고르는 동안 세상은 멈춤 (점수 · 생성 · 충돌 없음)
+      G.choice.t += dt; acc = 0; P.poundBuf = 0;
+      if ((pressed.left && G.choice.sel !== 0) || (pressed.right && G.choice.sel !== 1)) Sound.sfx.select(); if (pressed.left) G.choice.sel = 0; if (pressed.right) G.choice.sel = 1;
+      if (pressed.jump || pressed.start || pressed.throw) pickUpgrade(G.choice.sel);
+      for (const k of ['left', 'right', 'jump', 'start', 'throw', 'roll', 'down']) pressed[k] = false;
+      G.fx = G.fx.filter(p => (p.life -= dt) > 0);
+    }
+    else if (G.hitstop > 0) { G.hitstop -= dt; acc = 0; }
+    else {
+      let d = dt * (G.mode === 'run' ? G.speed : 1);
+      if (G.slow > 0) { G.slow -= dt; d *= 0.35; }
+      acc += d;
+      if (G.cut) acc = 0;
+      let steps = 0;
+      while (acc >= STEP && state === 'play' && !G.choice && steps++ < 14) {
+        G.lights.length = 0;
+        updateWorld(STEP); acc -= STEP; stepped = true;
+        if (G.hitstop > 0) { acc = 0; break; }
+      }
+      if (acc > STEP) acc = STEP;   // 느린 기기: 밀린 시간은 버림 (몰아서 돌다 더 느려지지 않게)
+    }
+    if (P.dead) { G.overT -= dt; if (G.overT <= 0) gameOver(); }
+  } else if (state === 'title') {
+    titleT += dt; titleWorld(dt);
+    if (!G.go && !howto && !dexView && (pressed.left || pressed.right)) { cycleScarf(pressed.left ? -1 : 1); pressed.left = pressed.right = false; }
+    if (titleT > 0.3 && !G.go && !Sound.playing && !document.hidden) Sound.startMusic({ calm: true, tempo: 100 });
+    if (G.go) { G.go += dt; P.vy += GRAV * dt; P.y = Math.min(GROUND, P.y + P.vy * dt); G.iris = { t: Math.min(0.45, G.go), dur: 0.9, done: true }; if (G.go >= 0.45) { G.iris = null; startGame(); } if (pressed.mute) toggleMute(); for (const k in pressed) pressed[k] = false; return; }
+    if (dexView) {   // 도감: 고르고 연습
+      const n = Object.keys(PATTERNS).length;
+      if (pressed.left) { dexSel = (dexSel + n - 1) % n; pressed.left = false; Sound.sfx.select(); }
+      if (pressed.right) { dexSel = (dexSel + 1) % n; pressed.right = false; Sound.sfx.select(); }
+      if (pressed.down) { dexSel = (dexSel + 5) % n; pressed.down = false; Sound.sfx.select(); }
+      if (pressed.pause) { pressed.pause = false; dexView = false; Sound.sfx.select(); }
+    }
+    if (mapView) { mapView.t += dt; for (const k in pressed) pressed[k] = false; }
+    if (pressed.start || pressed.jump || pressed.throw) {
+      Sound.init();
+      if (dexView && SEEN[Object.keys(PATTERNS)[dexSel]] && !G.go) { practiceKind = Object.keys(PATTERNS)[dexSel]; dexView = false; G.go = 0.001; P.vy = -JUMP_V; Sound.sfx.start(); }
+      else if (howto === 1) { howto = 2; Sound.sfx.select(); }   // 조작법 → 게임 요소
+      else if (howto || dexView) { howto = 0; dexView = false; Sound.sfx.select(); }
+      else if (menuSel === 2) { howto = 1; Sound.sfx.select(); }
+      else if (menuSel === 3) { dexView = true; Sound.sfx.select(); }
+      else if (menuSel === 4) mapOpen();
+      else if (menuSel === 5) toggleGod();
+      else if (!G.go) { routeStart = menuSel === 1; G.go = 0.001; P.vy = -JUMP_V; Sound.sfx.start(); }
+    }
+  } else if (state === 'over') {
+    G.overAge += dt; titleWorld(dt);
+    if (G.overAge > 1.4 && !Sound.playing && !document.hidden && !G.go) Sound.startMusic({ calm: true, tempo: 110 });
+    if (G.banners.length) { G.banners[0].t += dt; if (G.banners[0].t >= G.banners[0].dur) G.banners.shift(); }
+    shareBtn.hidden = G.overAge <= 1 || !!G.go;
+    if (G.go) { G.go += dt; G.iris = { t: Math.min(0.45, G.go), dur: 0.9, done: true, cx: Math.round(W / 2), cy: Math.round(H / 2) }; if (G.go >= 0.45) { G.iris = null; startGame(); } if (pressed.mute) toggleMute(); for (const k in pressed) pressed[k] = false; return; }
+    if (G.overAge > 1 && !pressed.pause && (pressed.start || pressed.retry || (pressed.jump && !TOUCH.matches))) { routeStart = !!G.route; G.go = 0.001; Sound.sfx.start(); for (const k in pressed) pressed[k] = false; return; }
+    if (G.overAge > 1 && pressed.pause) { releaseAll(); clearInputs(); menuSel = 0; howto = false; dexView = false; setupTitle(); }
+  } else if (state === 'pause') {
+    if (pressed.quit) { state = 'play'; Sound.stopMusic(); releaseAll(); clearInputs(); menuSel = 0; setupTitle(); return; }   // 처음 화면으로
+    if (pressed.retry) { routeStart = !!G.route; practiceKind = G.practice || null; Sound.stopMusic(); Sound.sfx.start(); releaseAll(); clearInputs(); startGame(); return; }   // 같은 모드로 다시 하기
+    if (pressed.pause || pressed.start || pressed.jump) { setPause(false); for (const k in pressed) pressed[k] = false; return; }
+  }
+  if (pressed.mute) toggleMute();
+  // 게임 입력은 시뮬레이션 스텝이 소비할 때까지 남겨둔다 (히트스톱 · 고주사율 대응)
+  for (const k in pressed) if (!(state === 'play' && GAME_KEYS.includes(k) && !stepped)) pressed[k] = false;
+}
+
+function titleWorld(dt) {
+  G.trauma = Math.max(0, G.trauma - dt * 2);
+  if (state === 'title' && titleT >= 0.6 && titleT - dt < 0.6) { shake(0.3); Sound.sfx.stomp(); }
+  P.blinkT -= dt; if (P.blinkT < -0.12) P.blinkT = rand(1.5, 4);
+  updateScarf();
+  G.lights = [];
+  updateVolcano(dt);
+  G.fx = G.fx.filter(p => p.kind !== 'puff');
+  for (const p of G.fx) { p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += p.grav * dt; }
+  G.fx = G.fx.filter(p => p.life > 0);
+}
+
+function setupTitle() {
+  Sound.setAccent(false);
+  shareBtn.hidden = true;
+  useTheme('field');
+  G = newWorld(); P = newPlayer(); P.x = 168; G.arenaR = W - 8;
+  B = null;
+  state = 'title'; titleT = 0;
+  clearInputs();
+}
+function startGame() {
+  Sound.init(); shareBtn.hidden = true;
+  Sound.setAccent(false);
+  G = newWorld(); P = newPlayer(); acc = 0; B = null; G.practice = practiceKind; practiceKind = null; if (routeStart && !G.practice) { G.route = { leg: 0, lap: 0, slot: 0, legs: ROUTE, plan: shuffled(ROUTE[0].pool).slice(0, 3) }; routeMod(); } routeStart = false;
+  releaseAll(); document.querySelectorAll('.lr [data-key]').forEach(b => b._pids && b._pids.forEach(id => press(b.dataset.key, 'p' + id))); clearInputs();
+  state = 'play';
+  beginStage();
+  G.iris = { t: 0.45, dur: 0.9, done: true };
+  Sound.stopMusic(); playMusic({ style: 'chip', song: 'field', tempo: 138 });
+  if (G.route) routeLegSetup();   // 일주: 구간 테마 · 속도 · 음악 맞추기
+  if (G.practice && (themeCfg().ban || []).includes(G.practice)) { const th = ['coast', 'beach', 'iho', 'grove'].find(k => !((THEME_CFG[k] || {}).ban || []).includes(G.practice)); if (th) useTheme(th); }   // 연습: 그 밈이 나오는 배경으로
+  G.hint = best.score < 300 ? 14 : 0;
+  firstRun = false;
+  ensureDaily(); G.wx = WEATHER.find(x => x.id === DAILY.wx) || WEATHER[0]; G.wxPulse = 1.2;
+  if (!noDaily() && DAILY.played !== DAILY.d && !DAILY.wxDone) banner(`오늘 ${G.wx.t}`, `${G.wx.d} · 5000점이면 진주`, UI.warnHi);   // 오늘 첫 판: 날씨 효과 안내
+}
+function gameOver() {
+  Sound.setAccent(false);
+  state = 'over'; G.overAge = 0; G.banners.length = 0;
+  const sc = Math.floor(G.score), newBest = !noRecord() && sc > best.score, prevBest = best.score;
+  if (newBest) { best = { score: sc }; try { localStorage.setItem('jeju.best2', JSON.stringify(best)); } catch (e) { /* 무시 */ } }
+  const gr = gradeOf(sc);
+  // 오늘 첫 판을 끝냈을 때 연속 기록 갱신 (3 · 7 · 이후 7일마다 진주)
+  ensureDaily(); let streakMsg = '';
+  if (!noDaily() && DAILY.played !== DAILY.d) {
+    const [yy, mm, dd] = DAILY.d.split('-').map(Number), yd = new Date(yy, mm - 1, dd - 1), yk = `${yd.getFullYear()}-${yd.getMonth() + 1}-${yd.getDate()}`;   // 판을 시작한 날 기준 어제
+    DAILY.streak = DAILY.played === yk ? (DAILY.streak | 0) + 1 : 1; DAILY.played = DAILY.d;
+    const bonus = DAILY.streak === 3 || DAILY.streak === 7 || (DAILY.streak > 7 && DAILY.streak % 7 === 0);
+    if (bonus) DAILY.pearl = (DAILY.pearl || 0) + 1;
+    streakMsg = `${DAILY.streak}일째 물질!${bonus ? ' 진주 +1' : ''}`;
+  }
+  if (!noRecord()) DAILY.best = Math.max(DAILY.best | 0, sc); saveDaily();
+  if (G.route && !godMode) { const prog = (G.route.lap || 0) * G.route.legs.length + G.route.leg + 1; G.route.prog = prog; if (prog > routeRec.best) { G.route.newRec = true; routeRec = { best: prog }; try { localStorage.setItem('jeju.route.v3', JSON.stringify(routeRec)); } catch (e) { /* 무시 */ } } }
+  G.info = { score: sc, newBest, streakMsg, killer: G.killer, rank: [0, gr[2], '#ffd84a'], grade: gr[1], phrase: pick(PHRASES), fact: jejuFact(), time: G.t, found: G.newFound || 0, prevBest };
+  Sound.sfx.over();
+  setTimeout(() => { if (state === 'over' && !document.hidden) Sound.startMusic({ calm: true, tempo: 110 }); }, 1400);
+}
+// 결과 화면을 그대로 카드로: 워터마크를 얹고 3배로 키워 공유 (안 되면 PNG 저장)
+async function shareResult() {
+  if (state !== 'over' || G.overAge <= 1 || G.go || !G.info || shareResult.busy) return;
+  const run = G; shareResult.busy = true;
+  try {
+    const bs = G.banners; G.banners = []; G.shareShot = true; try { render(); } finally { G.shareShot = false; G.banners = bs; }
+    const c = mk(W * 3, H * 3), x = c.getContext('2d'); x.imageSmoothingEnabled = false; x.drawImage(cv, 0, 0, W * 3, H * 3);
+    const tag = mk(W, 14), g0 = g;
+    try { g = tag.getContext('2d'); uiBox(0, 0, W, 14, UI.gold); uiText('제주 · ' + (location.host || 'JEJU'), W / 2, 2, { align: 'center', color: UI.sub }); } finally { g = g0; }
+    x.drawImage(tag, 0, (H - 14) * 3, W * 3, 42);
+    // 동기 인코딩: 탭 직후의 사용자 제스처 안에서 공유 창을 열기 위해
+    const blob = new Blob([Uint8Array.from(atob(c.toDataURL('image/png').split(',')[1]), ch => ch.charCodeAt(0))], { type: 'image/png' });
+    let data;
+    try { const file = new File([blob], 'jeju-game.png', { type: 'image/png' }); if (typeof navigator.share === 'function' && navigator.canShare?.({ files: [file] })) data = { files: [file], title: '제주', text: `${run.route ? `제주 일주 ${(run.route.lap || 0) + 1}바퀴 ${run.route.leg + 1}구간까지` : `${run.info.score}점 · ${run.info.grade}!`} 나보다 잘 피할 수 있수과? ${location.href.split('#')[0]}` }; } catch (_) { /* 공유 불가 → 저장 */ }
+    if (data && !run.downloadOnly) {
+      try { await navigator.share(data); return; }
+      catch (e) { if (e?.name === 'AbortError') return; run.downloadOnly = true; if (G === run && state === 'over') banner('공유가 안 됐수다', TOUCH.matches ? '공유 버튼을 한 번 더 누르면 저장' : 'S를 한 번 더 누르면 이미지로 저장', UI.warnHi); return; }
+    }
+    if (G !== run || state !== 'over') return;
+    const a = document.createElement('a'), url = URL.createObjectURL(blob); a.href = url; a.download = 'jeju-game.png'; document.body.appendChild(a);
+    try { a.click(); banner('이미지 저장!', 'jeju-game.png', UI.gold); } finally { a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000); }
+  } catch (_) { if (state === 'over') banner('저장 실패', '다시 시도해 주세요', UI.warnHi); }
+  finally { shareResult.busy = false; }
+}
+const shareBtn = document.getElementById('shareBtn');
+shareBtn.addEventListener('click', () => { shareBtn.blur(); shareResult(); });
+function setPause(on) {
+  if (on && G) G.pauseFact = jejuFact();
+  clearInputs();
+  if (on && state === 'play') { Sound.sfx.select(); state = 'pause'; G.pauseBars = [...G.hz, ...G.spawnQ].filter(h => h instanceof BeatBar && !h.up).map(h => [h, h.beatAt - h.b]); G.pauseBeat = Sound.beat(); Sound.stopMusic(); Sound.ambience('rain', 0); }
+  else if (!on && state === 'pause') {
+    state = 'play'; if (G.music && !(G.cut && !G.cut.subbed)) Sound.startMusic(Object.assign({}, G.music, { fromBeat: G.pauseBeat > 0 ? G.pauseBeat : 0 }));
+    // 음악은 멈춘 박에서 이어지지만, 소리가 꺼져 박자 시계가 바뀌었을 수도 있으니 아직 안 솟은 비트 막대의 박자를 맞춰 줌
+    for (const [h, left] of G.pauseBars || []) if (!h.up) { const nb = h.b + left; h.b0 += nb - h.beatAt; h.beatAt = nb; }
+    G.pauseBars = null;
+  }
+}
+
