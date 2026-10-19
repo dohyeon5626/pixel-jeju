@@ -4187,7 +4187,6 @@ function frame(now) {
 }
 (async function boot() {
   fit(); syncMute(); Sound.init();   // 소리 장치는 로딩 중에 미리 (브라우저가 막으면 첫 입력 때 깨어남)
-  const fav = document.createElement('link'); fav.rel = 'icon'; fav.href = TANGERINE.toDataURL(); document.head.appendChild(fav);
   requestAnimationFrame(frame);
   const fonts = Promise.all(['12px Galmuri11', 'bold 12px Galmuri11', '10px Galmuri9'].map(f => document.fonts.load(f, '가A1')));
   await Promise.race([fonts.catch(() => {}), new Promise(r => setTimeout(r, 4000))]);
