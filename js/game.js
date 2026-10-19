@@ -1755,3 +1755,507 @@ class PatMurang extends PatEvent {
   }
 }
 
+// ── 갈매기 새우깡: 하늘에서 내리꽂는 갈매기 ──
+class Gull {
+  constructor() {
+    this.tx = clamp(P.x + rand(-24, 24), 16, W - 16); this.dir = Math.random() < 0.5 ? -1 : 1;
+    this.x = this.tx - this.dir * 190; this.y = -VOFF - 12; this.t = 0; this.T = Math.max(1.0, 1.3 - G.diff * 0.05) * G.speed; this.dodged = false; this.anim = 0; this.sy = this.y; this.sx = this.x; this.squawk = false;
+  }
+  update(dt) {
+    this.t += dt; this.anim += dt * 10;
+    if (this.t < 0) return !this.dead;   // 편대: 차례가 올 때까지 대기 (길 미리보기는 계속 보임)
+    const k = this.t / this.T;
+    // 포물선으로 내리꽂았다가 다시 올라감
+    this.x = lerp(this.sx, this.tx + this.dir * 190, k);
+    this.y = this.sy + (GROUND - 10 - this.sy) * (1 - Math.pow(2 * k - 1, 2));
+    if (!this.squawk && k > 0.25) { this.squawk = true; Sound.sfx.gull(); }
+    return !this.dead && k < 1;
+  }
+  boxes() { return this.t < 0 ? NONE : [{ x: this.x - 6, y: this.y - 5, w: 12, h: 8 }]; }
+  drawDecal() { const k = Math.max(0, this.t) / this.T;
+    if (k < 0.45) { g.globalAlpha = 1 - k / 0.45; for (let s = Math.max(0.08, k); s < 0.92; s += 0.04) { const x = Math.round(lerp(this.sx, this.tx + this.dir * 190, s)), y = Math.round(this.sy + (GROUND - 10 - this.sy) * (1 - Math.pow(2 * s - 1, 2))); if (y < -VOFF + 30) continue; g.fillStyle = INK; g.fillRect(x - 1, y - 1, 3, 3); g.fillStyle = C.red[3]; g.fillRect(x, y, 1, 1); } g.globalAlpha = 1; }
+    if (k < 0.7) { const a = 0.15 + Math.min(1, k / 0.4) * 0.3; g.fillStyle = `rgba(30,20,40,${a})`; g.fillRect(Math.round(this.tx - 40), GROUND, 80, 1); g.fillStyle = `rgba(200,40,40,${a})`; g.fillRect(Math.round(this.tx - 6), GROUND, 12, 1); } }
+  onShot() { this.dead = true; burst(this.x, this.y, 10, ['#ffffff', '#c8ccd6'], 70, 0.5, 120); reward('shatter', this.x, this.y - 10); return true; }
+  draw() { const f = GULL[[0, 0, 1, 1, 1, 0][Math.floor(this.anim) % 6]][this.dir > 0 ? 'r' : 'l']; g.drawImage(f, Math.round(this.x - f.ax), Math.round(this.y - f.ay)); }
+}
+class PatGull extends Pattern {
+  constructor() { super(7.5); this.next = 0.4; }
+  update(dt) {
+    this.t += dt; this.next -= dt;
+    if (this.next > 0 || this.t > this.dur - 1.3) return;
+    if (G.diff >= 0.5 && !this.paired && G.patterns.length <= 1 && Math.random() < 0.4) {
+      // 갈매기 편대: 같은 쪽에서 8분음표마다 한 마리씩, 내리꽂는 자리를 30px씩 밀며 줄지어 강하 → 높이 한 번 뛰면 줄줄이 넘어감
+      const n = randi(3, 5), dir = pick([-1, 1]), step8 = 60 / (Sound.tempo || 138) / 2 * G.speed, base = clamp(P.x - dir * 45, 40, W - 40);
+      for (let i = 0; i < n; i++) { const gl = new Gull(); gl.dir = dir; gl.tx = clamp(base + dir * i * 30, 16, W - 16); gl.sx = gl.x = gl.tx - dir * 190; gl.t = Math.min(0, -(beatLead(gl.T / 2) - gl.T / 2)) - i * step8; gl.chain = true; spawnHz(gl); }
+      Sound.sfx.gull(); this.next = n * step8 + 1.6 * G.speed; return;
+    }
+    spawnHz(new Gull());
+    if (G.diff > 1.5 && Math.random() < 0.35) spawnHz(new Gull());
+    this.next = Math.max(0.5, 1.1 - G.diff * 0.1) * rand(0.8, 1.2);
+  }
+}
+// ── 렌터카 대행진 ──
+class RentCar {
+  constructor(dir, off) { this.dir = dir; this.x = dir > 0 ? -24 - off : W + 24 + off; this.speed = (rand(190, 230) + G.diff * 12) * Math.min(1, 1.6 / G.speed); this.dodged = false; this.bouncy = true; this.honk = false; this.t = 0; }
+  update(dt) {
+    this.t += dt; this.x += this.dir * this.speed * dt;
+    if (!this.honk && this.x > 12 && this.x < W - 12 && Math.abs(this.x - P.x) < 120) { this.honk = true; Sound.sfx.honk(); for (let i = 0; i < 3; i++) fx({ x: this.x + this.dir * 18, y: GROUND - 10 + (i - 1) * 3, vx: this.dir * 120, life: 0.12, kind: 'streak', len: 4, col: C.yel[3] }); }
+    if (this.x > -10 && this.x < W + 10 && Math.random() < dt * 20) fx({ x: this.x - this.dir * 16, y: GROUND - 3, vx: -this.dir * 30, vy: -8, life: 0.4, kind: 'puff', size: 1 });
+    return this.dir > 0 ? this.x < W + 40 : this.x > -40;
+  }
+  boxes() { return [{ x: this.x - 14, y: GROUND - 15, w: 28, h: 14 }]; }
+  onShot(s) { spark(s.x, s.y); Sound.sfx.tink(); return true; }
+  draw() { const c = RENTCAR[this.dir > 0 ? 'r' : 'l']; drawShadow(this.x, 28); g.drawImage(c, Math.round(this.x - 16), Math.round(GROUND - 17)); }
+}
+class PatCar extends Pattern {
+  constructor() { super(7.5); this.next = 0.3; }
+  update(dt) {
+    this.t += dt; this.next -= dt;
+    if (this.next > 0 || this.t > this.dur - 2) return;
+    const dir = pick([-1, 1]), n = 1 + (G.diff > 1.2 && Math.random() < 0.5 ? 1 : 0);
+    G.warnings.push({ side: -dir, kind: 'car', t: 0, dur: Math.max(0.7, 1.0 - G.diff * 0.06) * G.speed, spawn: () => { let off = 0; for (let i = 0; i < n; i++) { spawnHz(new RentCar(dir, off)); off += rand(90, 130); } } });
+    this.next = Math.max(1.4, 2.4 - G.diff * 0.18);
+  }
+}
+
+// ── 유채꽃 벌떼: 모두 같은 물결길을 따라 날아옴 (높이 뜬 구간 아래는 안전 · 낮은 구간은 점프 · 귤로 잡기) ──
+const BEE = [0, 1].map(f => {
+  const pb = new PB(8, 7), Y = C.yel, K = C.stone;
+  pb.ellipse(4, 4.2, 3, 2.1, (nx, ny, x) => ((x + 1) % 3 === 0 ? K[0] : sphereLight(nx, ny) > 0.6 ? Y[3] : Y[2]));
+  pb.set(7, 4, K[0]);                                   // 침
+  const wy = f ? 1 : 2; pb.set(3, wy, C.cloth[2]); pb.set(4, wy, C.cloth[3]); pb.set(5, wy + (f ? 0 : 1), C.cloth[2]);
+  return framePair(selOut(pb), 4, 4);
+});
+class Bee {
+  constructor(dir, i, speed, ph) { this.dir = dir; this.i = i; this.x = dir > 0 ? -10 - i * 12 : W + 10 + i * 12; this.ph = ph; this.y = this.path(); this.speed = speed; this.t = 0; this.dodged = false; this.stompable = false; }
+  path() { return GROUND - 24 + Math.sin(this.x * 0.045 + this.ph) * 14; }
+  update(dt) {
+    this.t += dt; this.x += this.dir * this.speed * dt;
+    this.y = this.path();
+    return !this.dead && (this.dir > 0 ? this.x < W + 20 : this.x > -20);
+  }
+  boxes() { return [{ x: this.x - 3, y: this.y - 3, w: 6, h: 5 }]; }
+  onShot() { daily('bee'); this.dead = true; burst(this.x, this.y, 6, [C.yel[2], C.stone[1]], 60, 0.35, 120); reward('shatter', this.x, this.y - 8); Sound.sfx.tink(); return true; }
+  draw() { const f = BEE[Math.floor(this.t * 18) % 2][this.dir > 0 ? 'r' : 'l']; g.drawImage(f, Math.round(this.x - f.ax), Math.round(this.y - f.ay)); }
+}
+class PatBee extends Pattern {
+  constructor() { super(7.5); this.next = 0.5; this.dir = pick([-1, 1]); }
+  update(dt) {
+    this.t += dt; this.next -= dt;
+    if (this.next > 0 || this.t > this.dur - 1.6) return;
+    const dir = this.dir, ph = rand(0, 6.28), n = 4 + Math.min(3, Math.floor(G.diff)), sp = (80 + G.diff * 8) * Math.min(1, 1.35 / G.speed);
+    G.warnings.push({ side: -dir, ph, t: 0, dur: 0.8 * G.speed, spawn: () => { Sound.sfx.buzz(); for (let i = 0; i < n; i++) spawnHz(new Bee(dir, i, sp, ph)); } });
+    this.next = Math.max(2.2, 2.8 - G.diff * 0.15);
+  }
+}
+
+// ── 참새 떼: 참새 몇 마리가 무리 지어 낮게(구르기로 밑을 통과) · 높게(가만히) 날아 지나감 ──
+//  참새: 밤색 정수리 · 흰 뺨에 검은 점 · 검은 턱 · 줄무늬 갈색 등 · 흰 날개띠 · 짧은 꼬리 (날갯짓 4칸)
+const SPARROW = (() => {
+  const K = { d: '#4e3424', b: '#8a5a3a', l: '#b48a62', u: '#c4b49c', c: '#8c4a2c', w: '#eee6d6', k: '#241c1a', g: '#5a504c' };
+  for (const k in K) K[k] = mute(K[k]);
+  const poly = (pb, pts, col) => {   // 다각형 채우기 (칸 가운데 기준)
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    for (let y = Math.floor(Math.min(...ys)); y <= Math.ceil(Math.max(...ys)); y++) for (let x = Math.floor(Math.min(...xs)); x <= Math.ceil(Math.max(...xs)); x++) {
+      let ins = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) { const [xi, yi] = pts[i], [xj, yj] = pts[j]; if ((yi > y + 0.5) !== (yj > y + 0.5) && x + 0.5 < (xj - xi) * (y + 0.5 - yi) / (yj - yi) + xi) ins = !ins; }
+      if (ins) pb.set(x, y, typeof col === 'function' ? col(x, y) : col);
+    }
+  };
+  const mkF = wing => {
+    const pb = new PB(17, 13);
+    poly(pb, [[5, 6.5], [0.5, 5.5], [0.5, 8], [5, 8.2]], (x, y) => y < 6.5 ? K.b : K.d);   // 짧은 꼬리
+    pb.ellipse(8.2, 7.2, 4.6, 2.5, (nx, ny) => ny > 0.1 ? K.u : (nx > -0.2 && nx < 0.3 && ny < -0.4) ? K.d : K.b);   // 몸통: 등 갈색(줄무늬) · 배 회갈색
+    pb.ellipse(12, 5.8, 2.4, 2.3, (nx, ny) => ny < -0.15 ? K.c : K.w);   // 머리: 밤색 정수리 · 흰 뺨
+    pb.set(12, 5, K.k); pb.set(13, 7, K.k); pb.set(12, 7, K.k);   // 눈 · 검은 턱
+    pb.set(14, 6, K.g); pb.set(15, 6, K.g);   // 짧고 굵은 부리
+    const tip = [[3.5, 0.2], [0.8, 4.2], [3.5, 11.8]][wing === 3 ? 1 : wing];   // 날개 끝 (위 · 가운데(활공) · 아래)
+    poly(pb, [[10.2, 6], [tip[0], tip[1]], [6.2, 7.2]], (x, y) => { const k = Math.hypot(x - tip[0], y - tip[1]); return k < 2.2 ? K.d : k > 5.2 ? K.l : K.b; });   // 뾰족한 날개: 끝은 짙고 어깨는 밝게
+    const mx = Math.round((10.2 + tip[0]) / 2), my = Math.round((6 + tip[1]) / 2); pb.set(mx, my, K.w);   // 흰 날개띠 한 점
+    return selOut(pb).canvas();
+  };
+  const r = [0, 1, 2, 1].map(mkF), l = r.map(flipC);
+  for (const f of r) { f.ax = 8; f.ay = 7; } for (const f of l) { f.ax = 8; f.ay = 7; }
+  return { r, l };
+})();
+class Plane {   // 참새 무리 (낮게 2마리 · 높게 3마리 — 판정 폭은 예전 비행기와 같음)
+  constructor(dir, low, speed) { this.dir = dir; this.low = low; this.y = low ? GROUND - 20 : GROUND - 44; this.x = dir > 0 ? -24 : W + 24; this.speed = speed; this.t = 0; this.warn = 0.7 * G.speed; this.dodged = false; this.birds = (low ? [[-7, 2], [7, -2]] : [[-13, 2], [0, -3], [13, 1]]).map(([ox, oy], i) => ({ ox, oy, ph: i * 1.3 + rand(0, 1) })); }
+  update(dt) {
+    this.t += dt;
+    if (this.flee) { this.x += this.dir * this.speed * 0.5 * dt; this.y -= 140 * dt; return this.y > -VOFF - 20; }   // 귤에 맞으면 놀라서 위로 흩어져 날아감
+    if (this.t >= this.warn) {
+      if (!this.roared) { this.roared = true; Sound.sfx.chirp(); }
+      this.x += this.dir * this.speed * dt;
+    }
+    return !this.dead && (this.dir > 0 ? this.x < W + 30 : this.x > -30);
+  }
+  boxes() { return this.t < this.warn || this.flee ? NONE : this.low ? [{ x: this.x - 10, y: this.y - 4, w: 20, h: 9 }] : [{ x: this.x - 15, y: this.y - 4, w: 30, h: 9 }]; }
+  onShot(s) { this.flee = true; Sound.sfx.chirp(); burst(s.x, s.y, 6, ['#8a5a3a', '#b4865c', '#e6dac2'], 50, 0.5, 80, 'chunk'); reward('shatter', this.x, this.y - 8); return true; }
+  drawBirds(sil) {
+    const set = SPARROW[this.dir > 0 ? 'r' : 'l'];
+    for (const b of this.birds) {
+      const f = set[Math.floor(this.t * 14 + b.ph * 3) % 4], bob = Math.round(Math.sin(this.t * 7 + b.ph) * 1.2) + (this.flee ? -Math.round(b.ox * 0.4) : 0);
+      g.drawImage(sil ? silOf(f, C.red[2]) : f, Math.round(this.x + b.ox * this.dir - f.ax), Math.round(this.y + b.oy + bob - f.ay));
+    }
+  }
+  draw() {
+    if (this.t < this.warn) {   // 예고: 지나갈 높이에 점선 + 참새 그림자
+      if (this.t < this.warn - 0.7 * G.speed) return;
+      { const ly = Math.round(this.y); for (let x = 2; x < W; x += 6) { g.fillStyle = INK; g.fillRect(x - 1, ly - 1, 5, 3); g.fillStyle = C.red[3]; g.fillRect(x, ly, 3, 1); } }
+      if (!(Math.floor(this.t * 10) % 2)) { const x0 = this.x; this.x = this.dir > 0 ? 20 : W - 20; g.save(); g.globalAlpha = 0.6; this.drawBirds(true); g.restore(); this.x = x0; }
+      return;
+    }
+    if (this.low && !this.flee) drawShadow(this.x, 20);
+    this.drawBirds(false);
+  }
+}
+class PatPlane extends Pattern {
+  constructor() { super(7.5); this.next = 0.4; }
+  update(dt) {
+    this.t += dt; this.next -= dt;
+    if (this.next > 0 || this.t > this.dur - 1.8) return;
+    const dir = pick([-1, 1]), low = Math.random() < 0.55, sp = (150 + G.diff * 10) * Math.min(1, 1.35 / G.speed);
+    spawnHz(new Plane(dir, low, sp));
+    if (G.diff > 1.6 && Math.random() < 0.35) { const p2 = new Plane(dir, !low, sp); p2.warn += 0.9 * G.speed; spawnHz(p2); }
+    this.next = Math.max(1.3, 2.1 - G.diff * 0.15);
+  }
+}
+// ── 귤 택배 왔수다: 그림자 자리에 상자가 곧게 떨어지고, 떨어진 상자는 밟거나 쏘면 귤이 쏟아짐 ──
+const PARCEL = (() => {
+  const pb = new PB(18, 15), K = ['#6a4a2e', '#8a6440', '#a8804e', '#c49a62'].map(c => mute(c));
+  for (let y = 2; y < 14; y++) for (let x = 1; x < 17; x++) pb.set(x, y, x < 3 ? K[3] : x > 14 ? K[1] : y === 2 ? K[3] : K[2]);
+  for (let x = 1; x < 17; x++) pb.set(x, 5, K[1]);                       // 뚜껑 접힌 선
+  for (let y = 2; y < 14; y++) pb.set(8, y, mix(K[2], '#d8c8a0', 0.4));   // 테이프
+  pb.rect(4, 8, 3, 3, C.org[2]); pb.set(5, 7, C.leaf[2]);                 // 귤 그림
+  pb.rect(10, 8, 4, 1, K[0]); pb.rect(10, 10, 3, 1, K[0]);                // 글씨 자리
+  return selOut(pb).canvas();
+})();
+class Parcel {
+  constructor(x, delay) { this.x = x; this.y = -VOFF - 16; this.t = 0; this.warn = delay; this.state = 'warn'; this.dodged = false; this.stompable = true; }
+  update(dt) {
+    this.t += dt;
+    if (this.state === 'warn' && this.t >= this.warn) this.state = 'fall';
+    if (this.state === 'fall') { this.vy = Math.min(820, (this.vy || 220) + 2600 * dt); this.y += this.vy * dt; if (this.y >= GROUND - 13) { this.y = GROUND - 13; this.state = 'rest'; this.safe = true; this.restT = 0; shake(0.12); Sound.sfx.thud(); dust(this.x, GROUND, 5, 0, 1); fx({ x: this.x, y: GROUND - 1, kind: 'ring', life: 0.25, col: '#fff4e0' }); burst(this.x, GROUND - 4, 6, [C.wood[1], C.wood[2], C.soil[3]], 90, 0.45, 380, 'chunk'); } }   // 점점 빨라지며 떨어지고 쿵
+    if (this.state === 'rest') { this.restT += dt; if (this.restT > 1.6 * G.speed) { this.open(false); return false; } }
+    return !this.dead;
+  }
+  open(bonus) {
+    this.dead = true; burst(this.x, GROUND - 8, 8, [C.wood[2], C.org[2]], 70, 0.4, 260);
+    const n = bonus ? 3 : 1; for (let i = 0; i < n; i++) G.pickups.push(new Pickup('tang', this.x + rand(-6, 6), GROUND - 14, rand(-50, 50), rand(-160, -110)));
+    if (bonus) popup('+귤', this.x, GROUND - 26, C.org[3], 's');
+  }
+  kill() { this.open(true); reward('shatter', this.x, GROUND - 16); }
+  boxes() { return this.state === 'fall' ? [{ x: this.x - 7, y: this.y, w: 14, h: 13 }] : this.state === 'rest' ? [{ x: this.x - 7, y: this.y + 2, w: 14, h: 4 }] : NONE; }
+  onShot() { this.kill(); return true; }
+  draw() {
+    const k = this.state === 'warn' ? this.t / this.warn : 1;
+    g.fillStyle = `rgba(30,16,14,${0.2 + 0.4 * k})`; g.fillRect(Math.round(this.x - 4 - 4 * k), GROUND, Math.round(8 + 8 * k), 2);
+    if (this.state === 'warn') topMark(this.x, this.t);
+    if (this.state !== 'warn') { const thru = this.state === 'rest' && Math.abs(P.x - this.x) < 12 && P.y > this.y; if (thru) g.globalAlpha = 0.6; const dip = this.state === 'rest' && this.restT < 0.05 ? 2 : this.state === 'rest' && this.restT < 0.1 ? 1 : 0; g.drawImage(PARCEL, Math.round(this.x - 9), Math.round(this.y - 1) + dip); g.globalAlpha = 1; }
+  }
+}
+class PatParcel extends Pattern {
+  constructor() { super(7); this.next = 0.6; }
+  update(dt) {
+    this.t += dt; this.next -= dt;
+    if (this.next > 0 || this.t > this.dur - 2) return;
+    const n = 2 + Math.min(2, Math.floor(G.diff));
+    for (let i = 0; i < n; i++) { const x = clamp(P.x + (i - (n - 1) / 2) * 34 + rand(-6, 6), 16, G.arenaR - 16); if (G.hz.some(h => h instanceof Parcel && Math.abs(h.x - x) < 14)) continue; spawnHz(new Parcel(x, (0.65 + i * 0.18) * G.speed)); }
+    this.next = Math.max(1.5, 2.2 - G.diff * 0.15);
+  }
+}
+
+// ── 밭담 바람구멍: 현무암 돌담이 옆에서 밀려옴 · 뚫린 구멍으로만 통과 (바닥 = 구르기, 가운데 = 점프, 위 = 2단 점프) ──
+const WALL_TOP = -VOFF - 4, WALL_H = GROUND - WALL_TOP;
+// ── 오름 패러글라이딩: 하늘에 뜬 낙하산은 밟으면 통통 튀는 징검다리 (밟으면 귤), 땅에는 꼬마 하르방 ──
+const GLIDER = (() => {
+  const pb = new PB(30, 24), A = C.teal, O = C.org;
+  for (let x = 2; x < 28; x++) {
+    const u = (x - 14.5) / 13, top = Math.round(2 + u * u * 5), st = Math.floor((x - 2) / 4) % 2, K = st ? A : O;
+    pb.set(x, top, K[3]); pb.set(x, top + 1, K[2]); pb.set(x, top + 2, x % 4 === 1 ? K[1] : K[2]); pb.set(x, top + 3, K[1]);
+  }
+  const L = mix(C.stone[3], C.cloth[3], 0.5);
+  for (const sx of [3, 9, 20, 26]) pb.limb(sx, 6 + (sx < 6 || sx > 23 ? 3 : 0), 14.5 + (sx < 15 ? -1 : 1), 16, 1, L);
+  pb.rect(13, 15, 3, 3, C.wood[1]); pb.set(14, 15, C.wood[2]);           // 머리 · 헬멧
+  pb.rect(13, 18, 3, 3, C.cloth[1]); pb.set(13, 18, C.cloth[2]);          // 몸
+  pb.set(12, 21, C.cloth[0]); pb.set(16, 21, C.cloth[0]);                 // 다리
+  return selOut(pb).canvas();
+})();
+class Glider {
+  constructor(dir, high, speed) { this.dir = dir; this.y0 = high ? GROUND - 140 : GROUND - 96; this.y = this.y0; this.x = dir > 0 ? -16 : W + 16; this.speed = speed; this.t = rand(0, 6); this.safe = true; this.bouncy = true; this.ambient = true; this.dodged = true; this.life = 10; }
+  update(dt) {
+    this.t += dt; this.life -= dt; this.x += this.dir * this.speed * dt; this.y = this.y0 + Math.sin(this.t * 2) * 3;
+    return !this.dead && this.life > 0 && (this.dir > 0 ? this.x < W + 20 : this.x > -20);
+  }
+  boxes() { return [{ x: this.x - 12, y: this.y - 10, w: 24, h: 6 }]; }
+  onBounce() {
+    this.sq = 0.15;
+    if (this.paid) return false; this.paid = true;
+    for (let i = 0; i < 2; i++) G.pickups.push(new Pickup('tang', this.x + rand(-6, 6), this.y - 8, rand(-50, 50), rand(-120, -80)));
+    fx({ x: this.x, y: this.y - 10, kind: 'ring', big: true, life: 0.3, col: C.teal[3] }); light(this.x, this.y - 8, 24, C.teal[3], 0.7);
+    return true;
+  }
+  draw() {
+    const sq = this.sq > 0 ? 1 : 0; this.sq = Math.max(0, (this.sq || 0) - 1 / 120);
+    g.save(); g.globalAlpha = this.life < 1 && Math.floor(this.life * 10) % 2 ? 0.4 : 1;
+    g.drawImage(GLIDER, Math.round(this.x - 15), Math.round(this.y - 12 + sq)); g.restore();
+  }
+}
+class PatGlider extends Pattern {
+  constructor() { super(7.5); this.next = 0.2; this.gl = 0; this.dir = pick([-1, 1]); this.high = Math.random() < 0.5; }
+  update(dt) {
+    this.t += dt; this.next -= dt; this.gl -= dt;
+    if (this.t > this.dur - 1.2) return;
+    if (this.gl <= 0) { const gl = new Glider(this.dir, this.high, 52 * Math.min(1, 1.35 / G.speed)); spawnHz(gl); gl.pat = null; this.high = !this.high; this.gl = 1.5; }
+    if (this.next > 0 || this.t < 1.2) return;
+    spawnHz(new Hopper(-this.dir));
+    if (G.diff >= 1.5 && Math.random() < 0.35) spawnHz(new Rise(clamp(P.x + rand(-8, 8), 16, W - 16), Math.max(0.65, 0.95 - G.diff * 0.06) * G.speed, 0.6));
+    this.next = Math.max(0.7, 1.3 - G.diff * 0.1) * rand(0.85, 1.15);
+  }
+  end() { for (const h of G.hz) if (h instanceof Glider) h.life = Math.min(h.life, 1); }
+}
+
+// 들어오는 쪽 화면 끝 꺾쇠 (dir: +1 = 왼쪽에서 들어옴)
+function edgeChev(dir, y, col = C.red[3]) { if (G && G.dark > 0 && !edgeChev.flush) { (G.edgeQ = G.edgeQ || []).push([dir, y, col]); return; }   // 태풍 어둠 위에 그리려고 나중으로
+  const yy = Math.round(y);   // 두 겹 큰 꺾쇠 (멀리서도 보이게)
+  for (const off of [0, 6]) { const x = dir > 0 ? 3 + off : W - 4 - off; for (const [c, o] of [[INK, 1], [off ? mix(col, INK, 0.3) : col, 0]]) { g.fillStyle = c; for (let i = 0; i < 4; i++) g.fillRect(x + dir * i - o, yy - 3 + i - o, 2 + 2 * o, 7 - 2 * i + 2 * o); } }
+}
+// ── 남방큰돌고래: 바다에서 솟아 포물선으로 넘어감 · 지나갈 길을 점선으로, 들어가고 나올 자리엔 물보라 고리 ──
+const DOLPHIN = [-0.6, 0, 0.6].map(ang => {
+  const w = 26, h = 18, pb = new PB(w, h), ca = Math.cos(ang), sa = Math.sin(ang), B = ['#34445a', '#506478', '#72889c', '#aebcc6'].map(c => mute(c));
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const dx = x + 0.5 - 13, dy = y + 0.5 - 9, u = dx * ca + dy * sa, v = -dx * sa + dy * ca;
+    let c = null;
+    const half = u > -10 && u < 9 ? 3.4 * Math.sqrt(Math.max(0, 1 - ((u + 0.5) / 9.6) ** 2)) : 0;
+    if (half > 0 && Math.abs(v + 0.2) <= half) c = v > half * 0.3 ? B[3] : v < -half * 0.45 ? B[1] : B[2];
+    if (u >= 8.5 && u < 11.5 && v > -0.6 && v < 1.2) c = B[2];                                        // 주둥이
+    if (u > -2.5 && u < 2 && v < -2.4 && v > -2.4 - (2 - Math.abs(u + 0.5)) * 1.4) c = B[1];        // 등지느러미
+    if (u <= -9.5 && u > -13 && Math.abs(v) < (-(u + 9.5)) * 1.2 + 0.5) c = B[1];                      // 꼬리
+    if (u > 2 && u < 5 && v > 1.2 && v < 2.6) c = B[1];                                                // 가슴지느러미
+    if (Math.round(u) === 6 && Math.round(v) === -1) c = INK;                                          // 눈
+    pb.set(x, y, c);
+  }
+  return selOut(pb).canvas();
+});
+const DOLPHIN_L = DOLPHIN.map(flipC);
+function splashFx(x, big = 1) {
+  Sound.sfx.splash();
+  fx({ x, y: GROUND - 1, kind: 'ring', life: 0.3, col: '#cfe4ec' });
+  for (let i = 0; i < 10 * big; i++) fx({ x: x + rand(-5, 5), y: GROUND - 2, vx: rand(-60, 60), vy: -rand(80, 180), grav: 520, life: rand(0.35, 0.6), kind: 'px', size: randi(1, 2), col: pick(['#cfe4ec', '#9ec2d4', '#fff4e0']) });
+}
+class Dolphin {
+  constructor(x0, x1, peak, T, warn) { Object.assign(this, { x0, x1, peak, T, warn, t: 0, dodged: false, s: -1 }); this.dir = Math.sign(x1 - x0); this.x = x0; this.y = GROUND + 10; }
+  pos(s) { return [lerp(this.x0, this.x1, s), GROUND + 10 - (this.peak + 10) * 4 * s * (1 - s)]; }
+  update(dt) {
+    this.t += dt; const s = (this.t - this.warn) / this.T;
+    if (s >= 0 && this.s < 0) splashFx(this.x0, 1);
+    if (s >= 0) {
+      this.s = s; [this.x, this.y] = this.pos(Math.min(1, s));
+      if (Math.random() < dt * 40) fx({ x: this.x - this.dir * 8, y: this.y + rand(-2, 2), vx: -this.dir * rand(10, 30), vy: rand(-10, 20), grav: 300, life: 0.4, kind: 'px', col: pick(['#cfe4ec', '#9ec2d4']) });
+      if (s >= 1) { splashFx(this.x1, 1.3); return false; }
+    }
+    return !this.dead;
+  }
+  boxes() { return this.s < 0 ? NONE : [{ x: this.x - 7, y: this.y - 4, w: 14, h: 8 }]; }
+  onShot(sh) { spark(sh.x, sh.y); Sound.sfx.tink(); return true; }
+  drawDecal() {
+    // 지나갈 길: 처음엔 또렷한 점선, 뛰어오르면 남은 길만 옅게
+    const s0 = Math.max(0, this.s), on = this.s < 0;
+    if (on || s0 < 0.6) for (let s = s0; s <= 1.001; s += 0.045) {
+      const [x, y] = this.pos(s); if (y > GROUND - 2) continue;
+      if (on) { g.fillStyle = INK; g.fillRect(Math.round(x) - 1, Math.round(y) - 1, 3, 3); }
+      g.fillStyle = on ? C.red[3] : 'rgba(232,69,74,0.35)'; g.fillRect(Math.round(x), Math.round(y), 1, 1);
+    }
+    if (on) {   // 솟을 자리 · 떨어질 자리: 물결 고리가 조여 듦
+      const k = clamp(this.t / this.warn, 0, 1);
+      for (const ex of [this.x0, this.x1]) { const r = Math.round(10 - 6 * k); g.fillStyle = INK; g.fillRect(Math.round(ex - r - 1), GROUND - 1, 2 * r + 3, 3); g.fillStyle = Math.floor(this.t * 12) % 2 ? '#9ec2d4' : '#cfe4ec'; g.fillRect(Math.round(ex - r), GROUND, 2 * r + 1, 1); }
+    }
+  }
+  draw() {
+    if (this.s < 0) return;
+    const i = this.s < 0.38 ? 0 : this.s < 0.62 ? 1 : 2, f = (this.dir > 0 ? DOLPHIN : DOLPHIN_L)[i];
+    g.save(); g.beginPath(); g.rect(-60, -VOFF - 40, W + 120, GROUND + VOFF + 40); g.clip();
+    g.drawImage(f, Math.round(this.x - 13), Math.round(this.y - 9)); g.restore();
+  }
+}
+class PatDolphin extends Pattern {
+  constructor() { super(7.5); this.next = 0.3; }
+  update(dt) {
+    this.t += dt; this.next -= dt;
+    if (this.next > 0 || this.t > this.dur - 2) return;
+    const span = rand(130, 170), end = clamp(P.x + rand(-14, 14), 20, G.arenaR - 20), dir = end - span < 10 ? -1 : end + span > G.arenaR - 10 ? 1 : pick([-1, 1]);
+    // 떨어질 자리가 숨비 근처 → 옆으로 비키거나 아치 밑으로 들어가기
+    const x1 = end, x0 = clamp(x1 - dir * span, 10, G.arenaR - 10), peak = rand(62, 84), T = Math.max(0.8, Math.abs(x1 - x0) / 150) * G.speed;
+    spawnHz(new Dolphin(x0, x1, peak, T, 0.9 * G.speed));
+    if (G.diff >= 1.5 && Math.random() < 0.45) { const y0 = clamp(x1 + dir * rand(60, 90), 10, G.arenaR - 10), y1 = clamp(y0 + dir * span * 0.8, 10, G.arenaR - 10); if (Math.abs(y1 - y0) > 90) spawnHz(new Dolphin(y0, y1, peak * 0.8, Math.max(0.8, Math.abs(y1 - y0) / 150) * G.speed, 1.3 * G.speed)); }
+    this.next = Math.max(1.3, 1.9 - G.diff * 0.12);
+  }
+}
+// ── 까마귀 떼: 하늘 위에 앉아 노려보다가(조준선) 줄이 굳으면 그 길로 내리꽂음 ──
+const CROW = (() => {
+  const K = ['#1c1822', '#2c2634', '#40384c', '#5a5268'].map(c => mute(c));
+  const mkF = (wing) => {
+    const pb = new PB(18, 14);
+    pb.ellipse(8.5, 7.5, 4.6, 2.5, (a, b) => b < -0.35 ? K[2] : K[1]);
+    pb.ellipse(13, 6, 1.9, 1.7, (a, b) => b < -0.25 ? K[2] : K[1]);
+    pb.set(15, 6, '#5e5a52'); pb.set(16, 6, '#4a463e'); pb.set(15, 7, '#3e3a34');           // 부리
+    pb.set(13, 5, K[3]);                                                                    // 눈 반짝
+    pb.rect(1, 7, 3, 2, K[0]); pb.set(0, 8, K[0]);                                          // 꽁지
+    if (wing === 0) { pb.limb(9, 6, 5, 1, 2, K[2]); pb.limb(10, 6, 9, 0, 1, K[3]); }
+    else if (wing === 1) { pb.limb(9, 7, 4, 7, 2, K[2]); pb.set(3, 7, K[3]); }
+    else if (wing === 2) { pb.limb(9, 8, 6, 13, 2, K[2]); pb.set(6, 13, K[3]); }
+    else { pb.limb(11, 7, 4, 8, 1, K[2]); }
+    return selOut(pb).canvas();
+  };
+  const r = [0, 1, 2, 3].map(mkF), l = r.map(flipC);
+  for (const f of [...r, ...l]) { f.ax = 9; f.ay = 7; }
+  return { r, l };
+})();
+// 만장굴의 박쥐 (동굴에서는 까마귀 대신): 막 날개를 펄럭이며 같은 방식으로 내리꽂음
+const BAT = (() => {
+  const K = ['#16121c', '#2a2232', '#3e3248', '#5a4a66'].map(c => mute(c)), eye = '#e8584a';
+  const mkF = (wing) => {
+    const pb = new PB(18, 14), cx = 9, cy = 7;
+    const span = [[-1, -5], [0, -2], [1, 3], [0, 1]][wing];   // 날개 끝 높이 (위 · 가운데 · 아래 · 접음)
+    if (wing < 3) for (const sd of [-1, 1]) {
+      const tipX = cx + sd * 8, tipY = cy + span[1];
+      for (let k = 0; k <= 8; k++) { const t = k / 8, x = cx + sd * k, yTop = Math.round(cy - 1 + (tipY - cy + 1) * t), yBot = Math.round(cy + 2 + (tipY - cy) * t * 0.6 + Math.sin(t * Math.PI * 3) * 1.2 * t); for (let y = Math.min(yTop, yBot); y <= Math.max(yTop, yBot); y++) pb.set(x, y, y === yTop ? K[3] : K[1]); }
+      pb.limb(cx + sd, cy - 1, tipX, tipY, 1, K[2]);   // 날개 뼈
+    } else { pb.rect(cx - 3, cy - 1, 7, 4, K[1]); }
+    pb.ellipse(cx + 0.5, cy + 1, 2.2, 2.6, (a, b) => b < -0.3 ? K[2] : K[1]);
+    pb.set(cx - 1, cy - 2, K[2]); pb.set(cx + 2, cy - 2, K[2]);   // 귀
+    pb.set(cx, cy, eye); pb.set(cx + 1, cy, eye);
+    return selOut(pb).canvas();
+  };
+  const r = [0, 1, 2, 3].map(mkF), l = r.map(flipC);
+  for (const f of [...r, ...l]) { f.ax = 9; f.ay = 7; }
+  return { r, l };
+})();
+class Crow {
+  constructor(x, delay) { this.px = x; this.py = -VOFF + 50 + rand(-6, 6); this.x = x + rand(-40, 40); this.sx = this.x; this.y = -VOFF - 16; this.t = 0; this.delay = delay; this.state = 'in'; this.dodged = false; this.anim = rand(0, 6); this.face = 1; this.bat = !!themeCfg().indoor; }
+  update(dt) {
+    this.t += dt; this.anim += dt * (this.bat ? 18 : 12);
+    const sp = 210 * Math.min(1, 1.35 / G.speed);
+    if (this.state === 'in') {
+      const k = easeOut(this.t / (0.45 * G.speed)); this.x = lerp(this.sx, this.px, k); this.y = lerp(-VOFF - 16, this.py, k); this.face = P.x >= this.x ? 1 : -1;
+      if (this.t >= this.delay) { this.state = 'aim'; this.t = 0; if (this.bat) Sound.sfx.tink(); else Sound.sfx.caw(); }
+    } else if (this.state === 'aim') {
+      this.y = this.py + Math.sin(this.anim * 0.4) * 1.5;
+      if (!this.locked) {
+        this.tx = P.x; this.ty = P.y - 10; this.face = P.x >= this.x ? 1 : -1;
+        if (this.t >= 0.3 * G.speed) {
+          this.locked = true; Sound.sfx.tink();
+          const dx = this.tx - this.x, dy = Math.max(50, this.ty - this.y), L = Math.hypot(dx, dy); this.vx = dx / L; this.vy = dy / L;
+          this.gx = this.x + this.vx / this.vy * (GROUND - 4 - this.y);
+          fx({ x: this.x, y: this.y - 2, kind: 'flare', size: 5, life: 0.18, col: C.red[3] });
+        }
+      }
+      if (this.t >= 0.9 * G.speed) { this.state = 'dive'; Sound.sfx.whoosh(); }
+    } else if (this.state === 'dive') {
+      this.x += this.vx * sp * dt; this.y += this.vy * sp * dt;
+      this.ghT = (this.ghT || 0) - dt; if (this.ghT <= 0) { this.ghT = 0.03; G.ghosts.push({ img: this.frame(), x: this.x, y: this.y, life: 0.15, col: C.red[2] }); }
+      if (this.y >= GROUND - 4) {
+        this.state = 'up'; this.vy = -1; shake(0.09); dust(this.x, GROUND, 5, this.vx > 0 ? 1 : -1, 1); Sound.sfx.thud();
+        fx({ x: this.x, y: GROUND - 2, kind: 'flare', size: 8, life: 0.12, col: '#fff4e0' }); fx({ x: this.x, y: GROUND - 1, kind: 'ring', life: 0.25, col: '#fff4e0' }); if (Math.abs(this.x - P.x) < 30) hitstop(0.02, 0.6);   // 땅에 꽂히는 순간 (숨비 가까이면 짧게 멈칫)
+        for (let i = 0; i < 10; i++) fx({ x: this.x, y: GROUND - 4, vx: rand(-50, 50), vy: -rand(30, 90), grav: 120, drag: 2, life: rand(0.5, 0.9), kind: 'chunk', size: 1, col: pick(['#2c2634', '#40384c']) });
+      }
+    } else {
+      this.x += this.vx * sp * 0.6 * dt; this.y -= sp * 0.55 * dt;
+      if (this.y < -VOFF - 20 || this.x < -20 || this.x > W + 20) return false;
+    }
+    return !this.dead;
+  }
+  boxes() { return this.state === 'dive' ? [{ x: this.x - 5, y: this.y - 3, w: 10, h: 6 }] : NONE; }
+  onShot() { this.dead = true; burst(this.x, this.y, 8, ['#2c2634', '#40384c', '#5a5268'], 60, 0.6, 120, 'chunk'); reward('shatter', this.x, this.y - 10); return true; }
+  frame() {
+    const S = this.bat ? BAT : CROW, set = (this.state === 'dive' ? this.vx : this.face) >= 0 ? S.r : S.l;
+    if (this.state === 'dive') return set[3];
+    return set[[0, 1, 2, 1][Math.floor(this.anim) % 4]];
+  }
+  drawDecal() {
+    if (this.state !== 'aim') return;
+    // 조준선: 따라다니는 동안은 옅게, 굳으면 붉은 점선이 빨라지게 깜빡 + 땅에 ×
+    if (!this.locked) { g.fillStyle = 'rgba(232,69,74,0.3)'; const dx = P.x - this.x, dy = Math.max(50, P.y - 10 - this.y), n = Math.hypot(dx, dy) / 6; for (let i = 1; i < n; i++) g.fillRect(Math.round(this.x + dx * i / n), Math.round(this.y + dy * i / n), 1, 1); return; }
+    const left = 0.9 * G.speed - this.t, blink = Math.floor(this.t * (left < 0.25 * G.speed ? 20 : 8)) % 2;
+    const n = Math.hypot(this.gx - this.x, GROUND - 4 - this.y) / 5;
+    for (let i = 1; i < n; i++) { const x = Math.round(lerp(this.x, this.gx, i / n)), y = Math.round(lerp(this.y, GROUND - 4, i / n)); g.fillStyle = INK; g.fillRect(x - 1, y - 1, 3, 3); g.fillStyle = blink ? C.yel[3] : C.red[3]; g.fillRect(x, y, 1, 1); }
+    const gx = Math.round(this.gx); g.fillStyle = INK; g.fillRect(gx - 3, GROUND - 1, 7, 3); g.fillStyle = C.red[3]; g.fillRect(gx - 2, GROUND, 5, 1); g.fillRect(gx, GROUND - 1, 1, 3);
+  }
+  draw() { const f = this.frame(); g.drawImage(f, Math.round(this.x - 9), Math.round(this.y - 7)); }
+}
+class PatCrow extends Pattern {
+  constructor() { super(7.5); this.next = 0.3; }
+  update(dt) {
+    this.t += dt; this.next -= dt;
+    if (this.next > 0 || this.t > this.dur - 2.2) return;
+    const n = 2 + (G.diff >= 2.5 ? 1 : 0);
+    for (let i = 0; i < n; i++) spawnHz(new Crow(clamp(P.x + (i - (n - 1) / 2) * 70 + rand(-10, 10), 20, G.arenaR - 20), (0.55 + i * 0.35) * G.speed));
+    this.next = Math.max(2.0, 2.6 - G.diff * 0.1);
+  }
+}
+
+// ── 방언 비: 제주어 한 낱말이 글자 돌판이 되어 차례로 떨어짐 · 다 떨어지면 뜻이 살짝 ──
+const DIALECT = [['ᄒᆞᆫ저옵서예', '어서 오세요'], ['하영', '많이'], ['속솜ᄒᆞ라', '조용히 해'], ['재게재게', '빨리빨리'], ['폭싹 속았수다', '수고 많았어요'], ['몽캐지 말라', '꾸물대지 마'], ['맨도롱 또똣', '알맞게 따뜻한'], ['놀멍 쉬멍', '놀면서 쉬면서'], ['게메', '글쎄'], ['요망지다', '야무지다'], ['무사', '왜'], ['고맙수다', '고맙습니다'], ['강 봅서', '가 보세요'], ['왕 봅서', '와 보세요'], ['지꺼지다', '기쁘다'], ['바당', '바다'], ['도새기', '돼지'], ['낭', '나무'], ['감저', '고구마'], ['지슬', '감자'], ['ᄂᆞᆷ삐', '무'], ['와리지 말라', '서두르지 마'], ['졸바로', '똑바로'], ['ᄆᆞᆫ딱', '모두'], ['ᄒᆞᆫ디', '함께'], ['어멍', '어머니'], ['아방', '아버지'], ['수눌음', '품앗이'], ['물애기', '갓난아기'], ['쉐', '소'], ['비바리', '처녀'], ['경ᄒᆞ난', '그러니까']];
+// 한 낱말이 통째로 뭉친 큰 글자 덩어리: 그림자 · 흐린 낱말로 자리를 알리고 → 쾅 떨어져 땅을 울린 뒤 글자 조각으로 부서짐
+const WORD_RAMP = () => [C.org[0], C.org[1], C.org[2], C.org[3], C.yel[2], C.yel[3]];
+class DialectWord {
+  constructor(word, mean, x, land) {
+    this.word = word; this.mean = mean; this.spr = logoText(word, graphemes(word).length <= 3 ? 2 : 1, WORD_RAMP());
+    this.w = this.spr.width; this.h = this.spr.height; const lo = G.arenaL + this.w / 2 + 2, hi = G.arenaR - this.w / 2 - 2; this.x = lo <= hi ? clamp(x, lo, hi) : (G.arenaL + G.arenaR) / 2;
+    this.land = land; this.fall = 0.42 * G.speed; this.t = 0; this.y = -VOFF - this.h - 4; this.dodged = false; this.st = 'warn';
+  }
+  update(dt) {
+    this.t += dt;
+    if (this.st === 'warn' && this.t >= this.land - this.fall) { this.st = 'fall'; Sound.sfx.whoosh(); }
+    if (this.st === 'fall') {
+      const s = clamp((this.t - (this.land - this.fall)) / this.fall, 0, 1);
+      this.y = lerp(-VOFF - this.h - 4, GROUND - this.h, s * s);
+      if (Math.random() < dt * 40) fx({ x: this.x + rand(-this.w / 2, this.w / 2), y: this.y - 2, vy: -rand(20, 60), life: 0.25, kind: 'streak', len: randi(4, 8), col: 'rgba(255,244,224,0.45)' });
+      if (s >= 1) {
+        this.st = 'land'; this.lT = 0; Sound.sfx.boom(); Sound.duck(0.25); shake(0.3); kick(0, 3); hitstop(0.04);
+        for (let k = -2; k <= 2; k++) dust(this.x + k * this.w / 5, GROUND, 3, Math.sign(k), 2);
+        fx({ x: this.x, y: GROUND - 1, kind: 'ring', big: true, life: 0.35, col: C.yel[3] });
+        for (let i = 0; i < 12; i++) fx({ x: this.x + rand(-this.w / 2, this.w / 2), y: GROUND - 3, vx: rand(-90, 90), vy: -rand(80, 180), grav: 480, life: rand(0.4, 0.7), kind: 'chunk', size: randi(1, 2), col: pick([C.soil[2], C.soil[3], C.stone[3]]) });
+        light(this.x, GROUND - this.h / 2, this.w * 0.6, C.yel[3], 0.8);
+      }
+    }
+    if (this.st === 'land') {
+      this.lT += dt;
+      if (this.lT > 0.32 * G.speed) {
+        for (let i = 0; i < 14; i++) fx({ x: this.x + rand(-this.w / 2, this.w / 2), y: GROUND - rand(2, this.h), vx: rand(-80, 80), vy: -rand(60, 160), grav: 420, life: rand(0.4, 0.8), kind: 'chunk', size: randi(1, 2), col: pick(WORD_RAMP()) });
+        popup('= ' + this.mean, this.x, GROUND - this.h - 12, C.yel[2], 's'); Sound.sfx.shatter();
+        return false;
+      }
+    }
+    return !this.dead;
+  }
+  boxes() { return this.st === 'fall' ? [{ x: this.x - this.w / 2 + 2, y: this.y + 2, w: this.w - 4, h: this.h - 3 }] : NONE; }
+  onShot(sh) { spark(sh.x, sh.y); Sound.sfx.tink(); return true; }
+  drawDecal() {
+    if (this.st !== 'warn') return;
+    const k = clamp(this.t / (this.land - this.fall), 0, 1), w = Math.round(this.w * (0.5 + 0.5 * k)), blink = Math.floor(this.t * (k > 0.7 ? 18 : 6)) % 2;
+    g.fillStyle = `rgba(30,16,14,${0.15 + 0.45 * k})`; g.fillRect(Math.round(this.x - w / 2), GROUND, w, 2); g.fillRect(Math.round(this.x - w / 2) + 3, GROUND - 1, w - 6, 1);
+    g.fillStyle = blink ? C.yel[3] : C.red[3]; for (const ex of [this.x - this.w / 2, this.x + this.w / 2 - 2]) g.fillRect(Math.round(ex), GROUND + 2, 2, 1);
+    if (k > 0.25) { g.save(); g.globalAlpha = 0.18 + 0.2 * k; g.drawImage(silOf(this.spr, C.red[2]), Math.round(this.x - this.w / 2), GROUND - this.h); g.restore(); }   // 떨어질 자리에 낱말 그림자
+    topMark(this.x - this.w / 2 + 3, this.t); topMark(this.x + this.w / 2 - 3, this.t);
+  }
+  draw() {
+    if (this.st === 'warn') return;
+    const sq = this.st === 'land' && this.lT < 0.08 ? 2 : 0, x = Math.round(this.x - this.w / 2), y = Math.round(this.y);
+    if (sq) g.drawImage(this.spr, x - 2, y + sq, this.w + 4, this.h - sq);   // 쿵: 살짝 찌그러짐
+    else g.drawImage(this.spr, x, y);
+    if (this.st === 'land') { g.fillStyle = INK; for (let k = 0; k < this.w; k += 5) g.fillRect(x + k, GROUND - 1 - ((k / 5) % 2), 3, 1); }   // 박힌 자리 금
+  }
+}
+class PatDialect extends Pattern {
+  constructor() { super(7.5); this.next = 0.3; this.used = []; }
+  update(dt) {
+    this.t += dt; this.next -= dt;
+    if (this.next > 0 || this.t > this.dur - 2.2) return;
+    const pool = DIALECT.filter(d => !this.used.includes(d[0])), [word, mean] = pick(pool.length ? pool : DIALECT); this.used.push(word);
+    spawnHz(new DialectWord(word, mean, P.x + rand(-20, 20), 1.0 * G.speed));
+    // 높은 단계: 가끔 두 번째 낱말이 옆에 조금 늦게 (사이는 비워 둠)
+    if (G.diff >= 1.5 && Math.random() < 0.4) { const [w2, m2] = pick(DIALECT), side = P.x < W / 2 ? 1 : -1; spawnHz(new DialectWord(w2, m2, P.x + side * 150, 1.35 * G.speed)); }
+    this.next = 1.9;
+  }
+}
+
