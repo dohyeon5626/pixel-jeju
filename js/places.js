@@ -269,3 +269,239 @@ const P_ = {
   poly(x, pts, col, a = 1) { x.globalAlpha = a; x.fillStyle = col; x.beginPath(); pts.forEach(([px, py], i) => i ? x.lineTo(px, py) : x.moveTo(px, py)); x.closePath(); x.fill(); x.globalAlpha = 1; },
 };
 
+// ═════════════════════════════════════════════════════════════
+//  폭포 명소 공통: 갯바위 · 먼 숲 언덕 (먼 풍경 → 오름 층 → 들판(바다 · 못) 층 → 가까운 층, 멀수록 연무)
+// ═════════════════════════════════════════════════════════════
+function basaltRock(x, rx, ry, w, h, St, R, moss) {   // 해안 갯바위와 같은 방식 (구 음영 + 숨구멍 + 윗면 이끼)
+  const pb = new PB(w + 2, h + 2);
+  for (let yy = 1; yy <= h; yy++) for (let xx = 1; xx <= w; xx++) { const nx = (xx - (w + 1) / 2) / (w / 2), ny = (yy - (h + 1) / 2) / (h / 2); if (Math.abs(nx) ** 1.7 + Math.abs(ny) ** 1.5 > 0.84 + 0.22 * vnoise(xx * 0.35, yy * 0.35, rx + 71)) continue; const v = sphereLight(clamp(nx, -1, 1), clamp(ny, -1, 1)); pb.set(xx, yy, St[v < 0.32 ? 0 : v < 0.5 ? 1 : v < 0.72 ? 2 : v < 0.88 ? 3 : 4]); }
+  for (let k = 0; k < w * h / 14; k++) { const a = 1 + Math.floor(R() * w), b = 1 + Math.floor(R() * h); if (pb.get(a, b) && pb.get(a, b + 1)) { pb.set(a, b, St[0]); pb.set(a, b + 1, St[3]); } }
+  if (moss) for (let yy = 0; yy < h + 2; yy++) for (let xx = 0; xx < w + 2; xx++) if (pb.get(xx, yy) && !pb.get(xx, yy - 1) && hash2(xx + rx, yy, 41) < 0.7) pb.set(xx, yy, moss[xx < (w + 2) * 0.6 ? 1 : 0]);
+  x.drawImage(selOut(pb, 0.5).canvas(), rx, ry);
+}
+
+// ── 천지연폭포 ──
+function cjFar(ph) {   // 먼 숲 언덕 (연무에 묻힌 둥근 능선)
+  const lw = layerW(LAYER_P.hall), c = mk(lw, 140), x = c.getContext('2d'), FL = ['#4e7a6a', '#5e8a76', '#709a82', '#86ac92'].map(k => atmo(k, ph, 0.45));
+  for (let i = 0; i < lw; i++) { const t = Math.round(84 - Math.sin(i * 0.012 + 1) * 14 - vnoise(i * 0.05, 1, 1601) * 8); for (let y = t; y < 140; y++) px1(x, band(FL, clamp(0.75 - (y - t) / 50 + (vnoise(i * 0.3, y * 0.3, 1602) - 0.5) * 0.3 + (y - t < 2 ? 0.2 : 0), 0, 0.999), i, y, 0.6), i, y); }
+  return c;
+}
+
+// ═════════════════════════════════════════════════════════════
+//  제주 식생 · 현무암 주상절리
+// ═════════════════════════════════════════════════════════════
+// 현무암 주상절리 (픽셀마다): 폭이 제각각인 기둥 · 기둥마다 빛 받는 면 / 그늘 면으로 꺾임 · 기둥마다 다른 높이의 마디 · 거친 표면 · 아래는 젖어 어둡게
+function basaltWall(c, maskPts, x0, x1, yTop, yBot, seed, opt = {}) {
+  // 현무암 주상절리 (픽셀마다): 기둥이 살짝 휘고 · 폭이 제각각 · 빛 받는 면 → 그늘 면으로 부드럽게 꺾임 · 마디는 기울고 굽음 · 모서리는 풍화돼 둥글게 · 꼭대기 높이 들쭉날쭉
+  const w = c.width, h = c.height, m = mkR(w, h), mx = m.getContext('2d'); P_.poly(mx, maskPts, '#fff');
+  const md = mx.getImageData(0, 0, w, h).data, x = c.getContext('2d'), id = x.getImageData(0, 0, w, h), d = id.data, R = rng(seed);
+  const ramp = (opt.ramp || ['#18171a', '#25232a', '#34313a', '#46424a', '#5c5760', '#76707a', '#928c92']).map(rgb);
+  const wx = opt.warp || (i => i), wx0 = Math.floor(Math.min(wx(x0), wx(x1))), wx1 = Math.ceil(Math.max(wx(x0), wx(x1)));   // warp: 휘어 들어간 벽 (옆으로 돌아간 면은 기둥이 좁아 보임)
+  const cols = []; for (let i = wx0 - 30; i < wx1 + 30;) { const cw = 6 + Math.floor(R() * 10); cols.push({ x: i, w: cw, ridge: 0.3 + R() * 0.35, tone: (R() - 0.5) * 0.1, seg: Array.from({ length: 14 }, () => 8 + R() * 18), off: R() * 20, slant: (R() - 0.5) * 5, topOff: Math.floor(R() * (opt.rag ?? 7)) }); i += cw; }
+  const topY = new Int16Array(w).fill(9999); for (let i = 0; i < w; i++) for (let y = 0; y < h; y++) if (md[(y * w + i) * 4 + 3] > 127) { topY[i] = y; break; }
+  for (let y = 0; y < h; y++) for (let i = x0; i < x1; i++) {
+    const p = (y * w + i) * 4; if (md[p + 3] < 128) continue;
+    const iw = wx(i) + (vnoise(i * 0.05, y * 0.025, seed + 7) - 0.5) * 8 + Math.sin(y * 0.035 + i * 0.02) * 1.5;   // 기둥이 살짝 휨
+    let ci = 0; while (ci < cols.length - 1 && iw >= cols[ci].x + cols[ci].w) ci++;
+    const col = cols[ci], u = clamp((iw - col.x) / col.w, 0, 0.999);
+    if (y < topY[i] + col.topOff * (0.4 + 0.6 * (1 - Math.sin(u * Math.PI))) + (1 - Math.sin(u * Math.PI)) * 2) continue;   // 둥글고 들쭉날쭉한 기둥 꼭대기
+    let yy = y + col.off + (u - 0.5) * col.slant + Math.sin(u * Math.PI) * 1.6, si = 0; while (si < 13 && yy > col.seg[si]) { yy -= col.seg[si]; si++; }   // 기울고 굽은 마디
+    const segT = yy / col.seg[si], segTone = (hash2(col.x, si, seed) - 0.5) * 0.12;
+    const rr = col.ridge, face = u < rr - 0.06 ? 0.62 - u * 0.14 : u > rr + 0.06 ? 0.36 - (u - rr) * 0.22 : 0.5 - (u - rr) * 1.1;   // 면이 부드럽게 꺾임
+    let v = face + col.tone + segTone + (vnoise(i * 0.3, y * 0.3, seed + 1) - 0.5) * 0.2 + (hash2(i, y, seed + 2) - 0.5) * 0.06;
+    v -= clamp((y - yTop) / (yBot - yTop), 0, 1) * 0.18;
+    const edgeU = Math.min(u, 1 - u), edgeS = Math.min(segT, 1 - segT) * col.seg[si];
+    if (edgeU * col.w < 0.8) v = 0.1 + vnoise(i, y * 0.2, seed + 8) * 0.08;                     // 기둥 사이 틈 (휘어서 이어짐)
+    else if (edgeS < 0.9) v = 0.12;                                                                // 마디 금
+    else { const cr = Math.hypot(Math.max(0, 2.5 - edgeU * col.w), Math.max(0, 2.5 - edgeS)); if (cr > 0) v -= cr * 0.07; if (segT < 0.2 && u < rr) v += 0.08; }   // 모서리 풍화(둥글게 어두움) · 마디 아래 빛
+    if (hash2(col.x, si, seed + 3) < 0.06) v -= 0.18;
+    if (opt.moss && vnoise(i * 0.09, y * 0.035, seed + 4) > opt.moss && hash2(i >> 1, y >> 1, seed + 9) < 0.8) { const mc = opt.mossCols || ['#3a6430', '#4e7c3a'], g2 = rgb(hash2(i, y, seed + 5) < 0.5 ? mc[0] : mc[1]);   /* mossCols: 시간대 색을 입힌 이끼 */ d[p] = g2[0]; d[p + 1] = g2[1]; d[p + 2] = g2[2]; d[p + 3] = 255; continue; }
+    const k = clamp(v, 0, 0.999) * (ramp.length - 1), a = Math.floor(k), t = k - a, c0 = ramp[a], c1 = ramp[Math.min(ramp.length - 1, a + 1)], mixv = t > 0.66 ? 1 : t > 0.33 ? (hash2(i >> 1, y, seed + 6) < 0.5 ? 1 : 0) : 0;
+    d[p] = mixv ? c1[0] : c0[0]; d[p + 1] = mixv ? c1[1] : c0[1]; d[p + 2] = mixv ? c1[2] : c0[2]; d[p + 3] = 255;
+  }
+  x.putImageData(id, 0, 0);
+}
+function overlay(base, top) { base.getContext('2d').drawImage(top, 0, 0); return base; }
+
+// ═════════════════════════════════════════════════════════════
+//  정방폭포 · 천지연폭포: 다른 명소와 같은 픽셀 문법 — 1px 정확 · 4~5톤 램프 · 거리별 연무(atmo) · 원근 층
+//  (붓질 그림을 줄여 쓰지 않음: 경계가 뭉개져 다른 배경과 이질감이 생김)
+// ═════════════════════════════════════════════════════════════
+// 픽셀 수관: 작은 잎 덩이 여러 개가 겹침 — 덩이마다 구 음영 · 아랫단 그늘 테로 덩이가 갈라져 보임 · 잎 끝이 삐죽한 윤곽 · 반짝이는 잎 점
+function pixTree(x, cx, cy, r, ramp, R, opt = {}) {
+  const fl = opt.flat || 0.82, size = Math.ceil(r * 2.8) + 8, pb = new PB(size, size), c0 = size / 2, n = opt.blobs || Math.max(5, Math.round(r * 0.9));
+  const blobs = [[c0, c0 - r * 0.08, r * 0.58]];
+  for (let k = 0; k < n; k++) { const a = R() * 6.283, d = Math.sqrt(R()) * r * (opt.spread || 0.6); blobs.push([c0 + Math.cos(a) * d, c0 + Math.sin(a) * d * fl, r * (0.32 + R() * 0.26)]); }
+  blobs.sort((p, q) => p[1] - q[1]);
+  for (const [bx, by, br] of blobs) for (let yy = Math.floor(by - br - 1); yy <= Math.ceil(by + br + 1); yy++) for (let xx = Math.floor(bx - br - 1); xx <= Math.ceil(bx + br + 1); xx++) {
+    const nx = (xx + 0.5 - bx) / br, ny = (yy + 0.5 - by) / (br * fl), dd = nx * nx + ny * ny;
+    if (dd > 1 + (hash2(xx + Math.round(cx) * 7, yy + Math.round(cy) * 3, 71) - 0.5) * 0.4) continue;
+    let v = sphereLight(clamp(nx, -1, 1), clamp(ny, -1, 1)) * 0.7 + (0.5 - (xx - c0) / r * 0.2 - (yy - c0) / r * 0.3) * 0.3;
+    if (dd > 0.66 && ny > 0.2) v -= 0.2;                                                                 // 덩이 아랫단 그늘 테
+    const hh = hash2(xx + Math.round(cx) * 5, yy + Math.round(cy), 72); if (hh < 0.06) v += 0.24; else if (hh > 0.95) v -= 0.22;   // 반짝 잎 · 잎 사이 틈
+    pb.set(xx, yy, ramp[clamp(Math.floor(v * ramp.length), 0, ramp.length - 1)]);
+  }
+  if (opt.trunk) { const [td, tl] = opt.trunk, th = opt.trunkH || r * 1.6, tw = Math.max(2, Math.round(r * 0.22)); px1(x, td, Math.round(cx - tw / 2), Math.round(cy + r * 0.3), tw, Math.round(th)); px1(x, tl, Math.round(cx - tw / 2), Math.round(cy + r * 0.3), 1, Math.round(th)); }
+  x.drawImage(pb.canvas(), Math.round(cx - c0), Math.round(cy - c0));
+  if (opt.flowers) for (let k = 0; k < r * 1.3; k++) { const a = R() * 6.283, d = Math.sqrt(R()) * r * 0.75, fx = Math.round(cx + Math.cos(a) * d), fy = Math.round(cy + Math.sin(a) * d * fl); if (pb.get(Math.round(fx - cx + c0), Math.round(fy - cy + c0))) { px1(x, opt.flowers[0], fx, fy, 2, 1); px1(x, opt.flowers[1], fx, fy); } }
+}
+// 픽셀 곰솔: 바닷바람에 굽은 줄기(아래는 굵게) · 옆으로 뻗은 가지 · 가지 끝 납작한 솔잎 덩이
+function pixPine(x, cx, base, h, ramp, trunk, R, lean) {
+  const pts = []; let px = cx, py = base;
+  for (let k = 0; k <= 10; k++) { pts.push([px, py]); py -= h * 0.08; px += lean * h * 0.045 + (R() - 0.5) * 1.1; }
+  for (let k = 0; k < 10; k++) { const [x1, y1] = pts[k], [x2, y2] = pts[k + 1], st = Math.ceil(Math.hypot(x2 - x1, y2 - y1) * 1.5), w = k < 4 ? 2 : 1; for (let q = 0; q <= st; q++) { const tx = Math.round(x1 + (x2 - x1) * q / st), ty = Math.round(y1 + (y2 - y1) * q / st); px1(x, trunk[0], tx, ty, w, 1); if (w > 1) px1(x, trunk[1], tx, ty); } }
+  for (let k = 0; k < 5; k++) {
+    const p = pts[Math.min(10, 5 + k)], side = k % 2 ? 1 : -1, reach = k === 4 ? 0 : h * (0.12 + R() * 0.16), ex = Math.round(p[0] + side * reach), ey = Math.round(p[1] - 1);
+    for (let q = 0; q <= reach; q++) px1(x, trunk[0], Math.round(p[0] + side * q), Math.round(p[1] - q * 0.15));
+    pixTree(x, ex, ey, h * (0.15 + R() * 0.06) * (k === 4 ? 1.15 : 1), ramp, R, { flat: 0.42, blobs: 5, spread: 0.95 });
+  }
+}
+// 픽셀 폭포: 아래로 조금 퍼짐 · 세로 물결 줄(노이즈) · 가장자리는 짙은 물빛, 가운데는 희게 · 오른쪽 그늘 · 벼랑 끝 흰 물마루와 바위 턱
+function pixFall(x, x0, w, y0, y1, ph, seed, opt = {}) {
+  const Wr = ['#4a6e90', '#6a92b2', '#92b6cc', '#bcd6e2', '#e2eef4', '#ffffff'].map(k => atmo(k, ph, opt.d ?? 0.12));
+  for (let y = y0; y < y1; y++) {
+    const t = (y - y0) / Math.max(1, y1 - y0), ww = w * (1 + t * (opt.spread ?? 0.3)), lip = y - y0 < 5 ? Math.round((1 - (y - y0) / 5) * 2) : 0, cxm = x0 + w / 2 + Math.sin(t * 2.4) * (opt.bow ?? 1) - lip;   // 벼랑 끝에서 앞으로 굽었다 떨어짐
+    const L = Math.round(cxm - ww / 2 + (vnoise(y * 0.22, 1, seed) - 0.5) * 2), Rr = Math.round(cxm + ww / 2 + (vnoise(y * 0.22, 2, seed) - 0.5) * 2);
+    for (let i = L; i <= Rr; i++) {
+      const u = (i - L) / Math.max(1, Rr - L), st = vnoise(i * 0.55 + seed, y * 0.03 - t * 2, seed + 3), edge = Math.min(u, 1 - u);
+      let v = 0.32 + (st > 0.6 ? 0.56 : st > 0.42 ? 0.32 : 0.08) + edge * 0.35 - (u > 0.68 ? (u - 0.68) * 1.1 : 0);   // 흰 줄기 · 물빛 줄기 · 오른쪽 그늘
+      if (i === L || i === Rr) v = 0.2;   // 또렷한 가장자리
+      if (y - y0 < 3) v = 0.99; else if (hash2(i >> 1, y, seed + 4) < 0.04) v += 0.3;   // 벼랑 끝 흰 물마루 · 부서지는 물
+      px1(x, Wr[clamp(Math.floor(v * Wr.length), 0, Wr.length - 1)], i, y);
+    }
+  }
+  px1(x, atmo('#2a2622', ph, opt.d ?? 0.12), Math.round(x0 - 3), y0 - 1, Math.round(w + 4), 1);
+}
+// 픽셀 물보라: 노이즈로 몽글몽글한 흰 거품 덩이 · 위로 튀는 물방울 · 물 위로 퍼지는 거품 줄 · 둘레 물안개(바둑판으로 성기게)
+function pixFoam(x, cx, cy, w, ph, seed, water) {
+  const F = ['#6a9cbc', '#9cc4dc', '#cde4f0', '#ecf6fa', '#ffffff'].map(k => atmo(k, ph, 0.1)), R = rng(seed);
+  for (let k = 0; k < w * 5; k++) { const a = Math.PI + R() * Math.PI, d = w * (0.5 + R() * 1.0); if (R() < 0.6) px1(x, F[2], Math.round(cx + Math.cos(a) * d * 1.3), Math.round(cy - 2 + Math.sin(a) * d * 0.9)); }   // 물안개
+  const pw = Math.ceil(w * 2.8) + 8, phh = Math.ceil(w * 1.2) + 10, pb = new PB(pw, phh), ox = pw / 2, base = phh - 5;
+  const puffs = []; for (let k = 0; k < Math.round(w * 0.9); k++) { const t = R() * 2 - 1, pr = w * (0.16 + R() * 0.14) * (1.25 - Math.abs(t) * 0.55); puffs.push([ox + t * w * 1.05, base - (1 - t * t) * w * (0.25 + R() * 0.3) - pr * 0.3, pr]); }
+  puffs.sort((p, q) => p[1] - q[1]);
+  for (const [px, py, pr] of puffs) for (let yy = Math.floor(py - pr); yy <= py + pr; yy++) for (let xx = Math.floor(px - pr); xx <= px + pr; xx++) {
+    const nx = (xx + 0.5 - px) / pr, ny = (yy + 0.5 - py) / pr, d2 = nx * nx + ny * ny; if (d2 > 1 || yy > base + Math.round(Math.sin(xx * 0.7) * 1.5)) continue;
+    const v = sphereLight(clamp(nx, -1, 1), clamp(ny, -1, 1));
+    pb.set(xx, yy, d2 > 0.76 && ny > 0.25 ? F[1] : v > 0.78 ? F[4] : v > 0.55 ? F[3] : F[2]);   // 덩이 아랫단은 옅은 물빛 테 → 덩이가 갈라져 보임
+  }
+  x.drawImage(selOut(pb, 0.3).canvas(), Math.round(cx - ox), Math.round(cy - base));
+  for (let k = 0; k < w * 3; k++) { const a = Math.PI + 0.15 + R() * (Math.PI - 0.3), d = w * (0.75 + R() * 0.9), sz = R() < 0.25 ? 2 : 1; px1(x, F[4], Math.round(cx + Math.cos(a) * d * 1.2), Math.round(cy - w * 0.25 + Math.sin(a) * d * 0.85), sz, sz); }   // 튀어 오르는 물방울
+  if (water) for (let k = 0; k < w * 2.2; k++) { const ox2 = (R() - 0.5) * w * 3.8, ln = 2 + Math.floor(R() * 6) - Math.floor(Math.abs(ox2) / w); if (ln > 0) px1(x, F[3 + (k % 2)], Math.round(cx + ox2), Math.round(cy + 1 + R() * 10), ln, 1); }   // 물 위로 퍼지는 거품 줄
+}
+function pixVines(x, x0, y0, len, ramp, seed) { for (let y = 0; y < len; y++) { const ox = Math.round(Math.sin((y + seed) * 0.5) * 1.2); px1(x, ramp[(y + seed) % 3 === 0 ? 3 : 1], x0 + ox, y0 + y); if (hash2(x0, y + seed, 81) < 0.35) px1(x, ramp[2], x0 + ox + (hash2(y, x0, 82) < 0.5 ? -1 : 1), y0 + y); } }
+
+// ── 정방폭포: 왼쪽 바다와 섶섬 · 오른쪽 주상절리 절벽(위는 빽빽한 상록 숲과 곰솔) · 넓은 폭포가 바다로 · 발치 바위 (들판 층) / 앞 풀밭 · 유채 · 덤불 (가까운 층) ──
+function jbField4(ph) {
+  const lw = layerW(LAYER_P.field), c = mkR(lw, 200), x = c.getContext('2d'), R = rng(4101), A = (k, d = 0.14) => atmo(k, ph, d), top = 104;
+  x.translate(0, 60); c.oy = -60;   // 오른쪽 절벽 · 나무 꼭대기가 층 위에서 잘리지 않게 화면 위(-60)부터
+  seaBase(x, lw, ph, top, ['#1e5a9a', '#2a72b8', '#3c8ed2', '#62ace2', '#a0d2ee'], 4102);
+  // 섶섬: 둥근 숲 섬 (위는 수관 덩이로 울퉁불퉁)
+  const sx = Math.round(lw * 0.16), FL = ['#2e5440', '#3a644a', '#4c7a58', '#64926a'].map(k => A(k, 0.4));
+  for (let i = -22; i <= 22; i++) { const t = i / 22, h = Math.round(12 * Math.pow(1 - t * t, 0.6) + (hash2(i, 1, 4103) < 0.3 ? 1 : 0)); for (let y = top - h; y <= top; y++) px1(x, y > top - 2 ? A('#3e4a48', 0.4) : FL[y < top - h + 2 ? (i < 2 ? 3 : 2) : i < 0 ? 1 : 0], sx + i, y); }
+  for (let k = 0; k < 9; k++) { const i = -18 + k * 4.5 + (R() - 0.5) * 2, t = i / 22, h = 12 * Math.pow(Math.max(0, 1 - t * t), 0.6); pixTree(x, sx + i, top - h + 2, 2.6 + R() * 1.4, [FL[0], FL[1], FL[2], FL[3], FL[3]], R, { blobs: 3 }); }   // 섬을 덮은 숲 질감
+  // 절벽 윤곽: 왼쪽 끝은 기둥이 들쭉날쭉 튀어나온 수직 절벽
+  const x0 = Math.round(lw * 0.47), ct = i => Math.round(46 - Math.pow(clamp((i - x0) / (lw - x0), 0, 1), 1.3) * 26 + (vnoise(i * 0.08, 0.5, 4104) - 0.5) * 4);   // 오른쪽으로 갈수록 높아지는 절벽
+  const topL = ct(x0 + 6), leftX = y => { const t = (118 - y) / (118 - topL); return x0 - 4 * Math.max(0, 1 - t * 4) + 6 * Math.pow(t, 2.4) + Math.sin(t * 6.5) * 1.2; };
+  const mask = [[x0 - 4, 118]]; for (let y = 116; y > topL + 1; y -= 2) mask.push([leftX(y), y]); for (let i = x0 + 6; i <= lw + 2; i += 2) mask.push([i, ct(i)]); mask.push([lw + 2, 118]);   // 톱니 없이: 아래는 기슭이 살짝 넓고, 위는 둥근 어깨
+  basaltWall(c, mask.map(([a, b]) => [a, b + 60]), x0 - 12, lw, 18 + 60, 118 + 60, 4105,   /* 픽셀을 직접 쓰는 함수라 층 이동(60px)을 직접 맞춤 */ { rag: 3, ramp: ['#201c1a', '#2e2a26', '#403a34', '#544d45', '#6c645a', '#887e70', '#a69a8a'].map(k => A(k, 0.12)) });
+  // 폭포 뒤 젖은 오목면
+  const fx = Math.round(lw * 0.77), fw = 30, WET = A('#1a1816');
+  for (let y = ct(fx) + 2; y < 114; y++) for (let i = fx - 8; i < fx + fw + 8; i++) { const k = 1 - Math.hypot((i - fx - fw / 2) / (fw / 2 + 8), (y - 80) / 40); if (k > 0.15 || (k > 0 && (i + y) % 2)) px1(x, WET, i, y); }
+  // 절벽 면 풀 덤불 · 늘어진 덩굴
+  const GR = ['#22402a', '#2e5634', '#406e3e', '#5a8a4a', '#7aa25a'].map(k => A(k)), EV = ['#1a4428', '#285c30', '#3a763a', '#56924a', '#7aae5a'].map(k => A(k));
+  for (let k = 0; k < 36; k++) { const vx = x0 + 8 + Math.floor(R() * (lw - x0 - 10)), vy = ct(vx) + 10 + Math.floor(R() * 70); if (Math.abs(vx - fx - fw / 2) < 16) continue; pixTree(x, vx, vy, 2 + R() * 2.5, GR, R, { blobs: 3 }); }
+  for (let k = 0; k < 22; k++) { const vx = x0 + 6 + Math.floor(R() * (lw - x0 - 8)); if (Math.abs(vx - fx - fw / 2) < 14) continue; pixVines(x, vx, ct(vx) + 2, 5 + Math.floor(R() * 16), GR, k * 7); }
+  // 절벽 위: 상록 숲 두 겹 + 바다 쪽으로 기운 곰솔
+  const EVd = ['#123220', '#1c4628', '#2a5e32', '#3e783e', '#58924c'].map(k => A(k));
+  for (let i = x0 - 2; i < lw + 6; i += 5) pixTree(x, i, ct(Math.max(x0, i)) - 12 - Math.floor(R() * 4), 6 + R() * 3, EVd, R);   // 맨 뒤 숲 (짙게 → 앞 덤불과 깊이 차이)
+  for (let i = x0 - 2; i < lw + 6; i += 5) pixTree(x, i + 2, ct(Math.max(x0, i)) - 5, 5 + R() * 3, EV, R);
+  const PN = ['#1a3a2a', '#284e36', '#3a6844', '#548652', '#74a262'].map(k => A(k)), TR = ['#3a2418', '#6a4a34'].map(k => A(k));
+  for (let k = 0; k < 15; k++) { const px = x0 + 6 + k * 14 + Math.floor((R() - 0.5) * 8); if (px > lw + 4) break; pixPine(x, px, ct(Math.min(lw, Math.max(x0, px))) - 3, 24 + R() * 14, PN, TR, R, -0.3 - R() * 0.6); }
+  for (let i = x0 - 4; i < lw + 6; i += 5) pixTree(x, i, ct(Math.max(x0, i)) + 1, 3.5 + R() * 2, EV, R, { blobs: 4 });
+  // 넓은 폭포 · 발치 바위 · 물보라와 거품 줄
+  pixFall(x, fx, fw, ct(fx) + 1, 112, ph, 4106);
+  const St = ['#1e1b18', '#2e2a26', '#433d37', '#5c554c', '#7a7266'].map(k => A(k, 0.12));
+  for (let k = 0; k < 18; k++) { const bw = 7 + Math.floor(R() * 10), bx = x0 - 34 + Math.floor(R() * (lw - x0 + 30)); if (Math.abs(bx + bw / 2 - fx - fw / 2) < 12) continue; basaltRock(x, bx, 104 + Math.floor(R() * 8), bw, 5 + Math.floor(R() * 5), St, R); }
+  const BG = ['#24201c', '#38332d', '#4e4840', '#686056', '#867c6e'].map(k => A(k, 0.1));   // 절벽 발치 큰 둥근 바위
+  for (const [bx, bw, bh] of [[x0 - 34, 22, 12], [x0 - 14, 28, 16], [x0 + 14, 20, 12], [fx - 26, 18, 11], [fx + fw + 6, 26, 15], [fx + fw + 30, 20, 12], [lw - 26, 28, 16]]) basaltRock(x, bx, 115 - bh, bw, bh, BG, R);
+  for (let i = x0 - 40; i < lw; i++) if (hash2(i, 9, 4108) < 0.55 && Math.abs(i - fx - fw / 2) > 18) px1(x, A(hash2(i, 4, 4109) < 0.5 ? '#ffffff' : '#d4ecf6', 0.1), i, 114 + Math.round(Math.sin(i * 0.31) * 1.2), 1 + (hash2(i, 5, 4110) < 0.3 ? 1 : 0), 1);   // 바위 · 절벽 발치 흰 물거품
+  pixFoam(x, fx + fw / 2, 113, 25, ph, 4107, true);
+  c.falls = [{ x: fx, y0: ct(fx) + 2, y1: 108, w: fw, a: 0.3, foam: { x: fx + fw / 2, y: 113, w: 25, water: true } }];
+  return c;
+}
+function jbNear4(ph) {   // 앞쪽 풀밭 · 유채 · 하얀 들꽃 · 양옆 덤불 (나무 울타리 없음)
+  const lw = layerW(LAYER_P.near), c = mk(lw, 160), x = c.getContext('2d'), R = rng(2111), A = k => atmo(k, ph, 0.04), G = C.grass.map(A), Y = C.yel.map(A), WH = A('#f4f0e4');
+  const EV = ['#1a4428', '#285c30', '#3a763a', '#56924a', '#7aae5a'].map(A);
+  for (let i = 0; i < lw; i++) { const t = 142 + Math.round(vnoise(i * 0.08, 1, 2112) * 3); px1(x, G[1], i, t, 1, 160 - t); px1(x, G[3], i, t); if (hash2(i, 1, 2113) < 0.3) px1(x, G[4], i, t - 1); if (hash2(i, 3, 2115) < 0.12) { px1(x, G[2], i, t - 2, 1, 2); px1(x, G[4], i, t - 3); } }   // 풀밭 · 삐죽한 풀잎
+  for (let k = 0; k < lw * 0.5; k++) { const i = Math.floor(R() * lw), y = 146 + Math.floor(R() * 12); px1(x, G[0], i, y, 1, 2); px1(x, G[2], i + 1, y); }   // 풀 결
+  for (let i = 0; i < lw; i += 3 + Math.floor(R() * 5)) { if (vnoise(i * 0.02, 0, 2114) < 0.35) continue; const by = 152 + Math.floor(R() * 4); for (let k = 0; k < 3 + Math.floor(R() * 3); k++) { const fx = i + Math.floor(R() * 6) - 3, fy = by - 4 - Math.floor(R() * 10); px1(x, G[1], fx + 1, fy + 2, 1, by - fy); px1(x, Y[1], fx, fy, 3, 1); px1(x, Y[1], fx + 1, fy - 1, 1, 3); px1(x, Y[3], fx + 1, fy); } }   // 유채
+  for (let k = 0; k < lw * 0.06; k++) { const fx = Math.floor(R() * lw), fy = 146 + Math.floor(R() * 10); px1(x, WH, fx - 1, fy); px1(x, WH, fx + 1, fy); px1(x, WH, fx, fy - 1); px1(x, WH, fx, fy + 1); px1(x, Y[2], fx, fy); }   // 하얀 들꽃
+  for (let k = 0; k < 4; k++) pixTree(x, 4 + k * 12, 137 + (k % 2) * 4, 9 + R() * 3, EV, R);   // 왼쪽 앞 덤불
+  for (let k = 0; k < 3; k++) pixTree(x, lw - 8 - k * 9, 124 + k * 6, 9 + R() * 3, EV, R);
+  return c;
+}
+
+// ── 천지연폭포: 먼 숲 언덕(먼 층) · 골짜기 숲 비탈과 이끼 낀 주상절리 절벽 · 폭포가 둥글게 패인 골짜기(오름 층) · 앞으로 트이는 옥빛 못과 물가 숲(들판 층) · 자갈 기슭과 꽃 덤불(가까운 층) ──
+const CJ = (() => { const lw = layerW(LAYER_P.oreum); return { cx: Math.round(lw * 0.56), hw: Math.round(lw * 0.3), PM: 1.2, mouth: Math.round(lw * 0.3 * 0.74) }; })();   // 천지연 말발굽 절벽: 가운데 · 반폭 · 휘는 정도 · 못 입구 반폭
+function cjMid4(ph) {
+  const lw = layerW(LAYER_P.oreum), c = mkR(lw, 140), x = c.getContext('2d'), R = rng(4201), A = (k, d = 0.2) => atmo(k, ph, d);
+  const FAR = ['#2e5c44', '#3c6e4e', '#4e845c', '#66986c', '#84b080'].map(k => A(k, 0.2)), EV = ['#163a24', '#22522c', '#326c36', '#4c8a44', '#70a858'].map(k => A(k, 0.08)), VN = ['#2e5a26', '#447a30', '#62a03c', '#88c050', '#a8d468'].map(k => A(k, 0.1)), GR = ['#22402a', '#2e5634', '#406e3e', '#5a8a4a', '#7aa25a'].map(k => A(k, 0.12));
+  for (let i = 0; i < lw; i++) px1(x, FAR[1], i, 57 + Math.round(Math.sin(i * 0.05) * 3), 1, 70);   // 숲 밑을 수관 가운데 높이부터 채워 나무 사이로 하늘이 비치지 않게
+  for (let i = -6; i < lw + 8; i += 6) pixTree(x, i, 56 + Math.round(Math.sin(i * 0.05) * 3) - Math.floor(R() * 4), 7 + R() * 3, FAR, R);   // 절벽 뒤 숲 (뒷줄)
+  for (let i = -3; i < lw + 8; i += 6) pixTree(x, i, 64 + Math.round(Math.sin(i * 0.07 + 1) * 3) - Math.floor(R() * 3), 7 + R() * 3, FAR, R);   // 앞줄
+  for (let y = 72; y < 124; y += 8) for (let i = -4 + (y % 16 ? 3 : 0); i < lw + 8; i += 7) pixTree(x, i + (R() - 0.5) * 3, y + (R() - 0.5) * 3, 7 + R() * 3, FAR, R);   // 골짜기 아래로 이어지는 숲 (절벽에 가려지고 양옆 틈만 보임)
+  const { cx: cxA, hw: halfW, PM } = CJ, sPM = Math.sin(PM), cPM = Math.cos(PM), x0 = cxA - halfW, x1 = cxA + halfW;
+  const phi = i => Math.asin(clamp((i - cxA) / halfW, -1, 1) * sPM), dep = i => (Math.cos(phi(i)) - cPM) / (1 - cPM);   // dep: 0(양끝 · 앞) ~ 1(폭포 · 가장 안쪽)
+  const base = i => Math.round(126 - dep(i) * 16), ct = i => Math.round(62 + dep(i) * 13 + (vnoise(i * 0.06, 0.5, 4202) - 0.5) * 4);
+  for (let i = x0; i <= x1; i++) { const b0 = base(i); for (let y = b0 - 1; y < 126; y++) { const k = clamp((y - 110) / 16, 0, 1) * 0.55 + (1 - dep(i)) * 0.45; px1(x, band(['#0e4a5c', '#145e74', '#1e7890', '#3a98ae'].map(q => A(q, 0.14)), clamp(k, 0, 0.999), i, y), i, y); } }   // 안쪽 못: 절벽 그늘에 짙고, 입구 쪽으로 밝아짐
+  const mask = []; for (let i = x0; i <= x1; i += 2) mask.push([i, ct(i)]); for (let i = x1; i >= x0; i -= 2) mask.push([i, base(i) + 1]);
+  basaltWall(c, mask, x0 - 4, x1 + 4, 62, 128, 4203, { ramp: ['#16181a', '#22252a', '#30343a', '#40454a', '#545a5e', '#6c7276', '#888e90'].map(k => A(k, 0.18)), moss: 0.7, mossCols: ['#3a6430', '#4e7c3a'].map(k => A(k, 0.18)), warp: i => cxA + phi(i) / sPM * halfW });
+  { const id = x.getImageData(0, 0, lw, 140), d = id.data;   // 휘어 든 면의 밝기: 해를 보는 오른쪽 벽은 밝게, 왼쪽 벽 · 가장 안쪽은 그늘 · 폭포 둘레는 물안개
+    for (let i = Math.max(0, x0); i < Math.min(lw, x1 + 1); i++) { const f = 1 + 0.26 * phi(i) / PM - 0.1 * dep(i); for (let y = ct(i) - 2; y <= base(i) + 1; y++) { const q = (y * lw + i) * 4; if (!d[q + 3]) continue; const mist = Math.max(0, 1 - Math.abs(i - cxA) / 34) * clamp((y - 86) / 26, 0, 1) * 0.3; for (let k = 0; k < 3; k++) d[q + k] = clamp(d[q + k] * f + (226 - d[q + k] * f) * mist, 0, 255); } }
+    x.putImageData(id, 0, 0); }
+  for (let i = x0; i <= x1; i++) { const b0 = base(i), t0 = b0 - 14 + Math.round(Math.sin(i * 0.04) * 2); for (let y = t0; y < b0; y++) { const k = (y - t0) / 14; if (k > 0.3 || (i + y) % 2) px1(x, A(k > 0.65 ? '#101214' : '#181a1e', 0.18), i, y); } }   // 물가 아래쪽 패인 그늘
+  for (let k = 0; k < 16; k++) { const vx = x0 + 8 + Math.floor(R() * (x1 - x0 - 16)), vy = ct(vx) + 8 + Math.floor(R() * Math.max(4, base(vx) - ct(vx) - 22)); pixTree(x, vx, vy, 2 + R() * 2, GR, R, { blobs: 3 }); }
+  const fw = 20, fx = cxA - 10;
+  for (let k = 0; k < 44; k++) { const vx = x0 + 4 + Math.floor(R() * (x1 - x0 - 8)); if (Math.abs(vx - cxA) < 17) continue; pixVines(x, vx, ct(vx) + 1, Math.min(6 + Math.floor(R() * 24), base(vx) - ct(vx) - 6), k % 2 ? VN : GR, k * 5); }   // 늘어진 덩굴 (밝은 잎 · 짙은 잎)
+  for (let i = x0 - 2; i < x1 + 4; i += 5) pixTree(x, i, ct(i) - 2, 4 + R() * 2, EV, R, { blobs: 4 });
+  // 폭포: 가장 안쪽 벽에서 떨어지는 한 줄기 + 오른쪽 가는 갈래 · 발치 물보라
+  const fb = base(fx + fw / 2);
+  pixFall(x, fx, fw, ct(fx) + 1, fb, ph, 4204, { d: 0.22 }); pixFall(x, fx + fw + 4, 3, ct(fx + fw + 4) + 3, fb, ph, 4206, { d: 0.22, spread: 0.2 });
+  pixFoam(x, fx + fw / 2, fb, 17, ph, 4207, false);
+  // 양옆 숲: 산처럼 솟지 않고 뒤 숲과 한 덩이로 이어진 숲 지붕 (가장자리로 갈수록 살짝만 높아지고, 폭포 쪽으로 내려와 절벽 끝을 덮음)
+  const MID = FAR.map((k, i) => mix(k, EV[i], 0.5)), sideTop = [[-8, x0 + 18, i => 47 + Math.pow(clamp((i + 8) / (x0 + 26), 0, 1), 1.4) * 19], [x1 - 18, lw + 8, i => 47 + Math.pow(clamp((lw + 8 - i) / (lw - x1 + 26), 0, 1), 1.4) * 19]];
+  for (const [sx0, sx1, f] of sideTop) for (let i = Math.max(0, sx0); i < Math.min(lw, sx1); i++) { const t = Math.round(f(i) + 4 + (vnoise(i * 0.2, 3, 4208) - 0.5) * 3); px1(x, t < 70 ? MID[1] : EV[1], i, t, 1, 124 - t); }   // 숲 밑 채우기
+  const crowns = []; for (let y = 40; y < 124; y += 6) sideTop.forEach(([sx0, sx1, f], sd) => { const jag = Math.round((vnoise(y * 0.15, 2 + sd, 4210) - 0.5) * 22);   /* 절벽 끝을 덮는 숲 가장자리는 줄마다 들쭉날쭉 */ for (let i = sx0 + (sd ? -jag : 0); i < sx1 + (sd ? 0 : jag); i += 7) { const top = f(i) + (vnoise(i * 0.09, 1, 4209) - 0.5) * 6; if (y >= top) crowns.push([i + (R() - 0.5) * 4, y + (R() - 0.5) * 3, 7 + R() * 3]); } });
+  crowns.sort((p, q) => p[1] - q[1]).forEach(([cx, cy, r]) => pixTree(x, cx, cy, r, cy < 66 ? MID : EV, R));   // 위(먼 쪽)는 뒤 숲 색에 가깝게, 아래(가까운 쪽)는 짙게
+  c.falls = [{ x: fx, y0: ct(fx) + 2, y1: fb - 2, w: fw, a: 0.3, foam: { x: fx + fw / 2, y: fb, w: 17, water: true } }];
+  return c;
+}
+function cjField4(ph) {   // 옥빛 못: 폭포 쪽 좁은 입구에서 앞으로 나올수록 넓게 트임 · 양옆 물가는 비스듬히 벌어지는 바위 · 덤불
+  const lw = layerW(LAYER_P.field), c = mk(lw, 140), x = c.getContext('2d'), R = rng(4211), A = (k, d = 0.1) => atmo(k, ph, d), top = 118;
+  seaBase(x, lw, ph, top, ['#145e78', '#1e7a96', '#2c98b4', '#4cb6cc', '#8ad6e2'], 4212);
+  const mc = CJ.cx + 3, mh = CJ.mouth, shoreY = i => i < mc - mh ? top + Math.pow((mc - mh - i) / (mc - mh), 0.8) * 17 : i > mc + mh ? top + Math.pow((i - mc - mh) / (lw - mc - mh), 0.8) * 17 : top;
+  x.fillStyle = A('#0e4a5e');   // 입구 바로 앞은 절벽 그늘이 이어져 짙게
+  for (let y = top; y < top + 7; y++) for (let i = mc - mh; i < mc + mh; i++) { const k = Math.round((1 - (y - top) / 7) * (1 - Math.pow(Math.abs(i - mc) / mh, 2)) * 3) / 3 * 0.5; if (k > 0) { x.globalAlpha = k; x.fillRect(i, y, 1, 1); } }
+  x.globalAlpha = 1;
+  for (let y = top; y < top + 12; y++) for (let i = mc - 8; i < mc + 8; i++) if (hash2(i, y >> 1, 4213) < (1 - Math.abs(i - mc) / 8) * (1 - (y - top) / 12) * 0.6) px1(x, A('#c8e8ec'), i, y);   // 폭포가 비친 옅은 빛
+  const St = ['#2a2c2c', '#40444a', '#5c6064', '#7c8084', '#9ea2a2'].map(k => A(k, 0.12)), MO = ['#3a6a30', '#5a8a3a'].map(k => A(k, 0.12));
+  const BU = ['#1c4a26', '#2a6430', '#3e823a', '#5ca04a', '#80bc5c'].map(k => A(k, 0.12));
+  const FO = ['#163a24', '#22522c', '#326c36', '#4c8a44', '#70a858'].map(k => A(k, 0.08));   // 뒤 숲 비탈(cjMid4)과 같은 숲 색
+  for (let i = 0; i < lw; i++) { const sy = Math.round(shoreY(i)); if (sy > top) px1(x, FO[0], i, top, 1, sy - top); }   // 숲 밑 그늘 (나무 사이 틈으로만 보임)
+  for (let y = top - 3; y < top + 18; y += 5) for (let i = -4; i < lw + 4; i += 6) { if (shoreY(i) < y + 5) continue; pixTree(x, i + (R() - 0.5) * 3, y + (R() - 0.5) * 2, 6 + R() * 3, FO, R); }   // 양옆 물가까지 내려온 숲 (빈 초록 면 없이 나무로 채움)
+  for (let bx = 2; bx < lw; bx += 7 + Math.floor(R() * 5)) { if (Math.abs(bx - mc) < mh - 4) continue; pixTree(x, bx, Math.round(shoreY(bx)) - 6, 5 + R() * 2.5, BU, R, { blobs: 4 }); }   // 물가 덤불
+  for (let bx = 0; bx < lw;) { const bw = 9 + Math.floor(R() * 8), bh = 5 + Math.floor(R() * 4), cxr = bx + bw / 2; if (Math.abs(cxr - mc) < mh - 6) { bx = Math.abs(cxr - mc) < mh - 6 && cxr < mc ? mc + mh - 6 : bx + bw; continue; } basaltRock(x, bx, Math.round(shoreY(cxr)) + 2 - bh, bw, bh, St, R, MO); bx += bw - 2 + Math.floor(R() * 5); }   // 비스듬히 벌어지는 물가 바위
+  for (let k = 0; k < 60; k++) { const y = top + 3 + Math.floor(Math.pow(R(), 1.2) * 19), px = Math.floor(R() * lw); if (y > shoreY(px) + 1) px1(x, A(R() < 0.5 ? '#ffffff' : '#c8eef4'), px, y, 2 + Math.floor(R() * 5), 1); }   // 잔물결
+  return c;
+}
+function cjNear4(ph) {   // 앞쪽: 못가 자갈 기슭 · 주황 꽃 덤불 · 이끼 바위 (양옆 큰 나무는 화면을 가려서 뺌)
+  const lw = layerW(LAYER_P.near), c = mk(lw, 160), x = c.getContext('2d'), R = rng(4221), A = k => atmo(k, ph, 0.05);
+  for (let i = 0; i < lw; i++) { const t = 143 + Math.round(vnoise(i * 0.12, 1, 4222) * 3 - 1); px1(x, A('#3a3c38'), i, t, 1, 160 - t); if (hash2(i, 2, 4223) < 0.5) px1(x, A('#4e504a'), i, t); }
+  for (let k = 0; k < 140; k++) px1(x, A(pick2(R, ['#5a5c56', '#6e706a', '#4a4c48'])), Math.floor(R() * lw), 144 + Math.floor(R() * 12), 2 + Math.floor(R() * 3), 1);
+  const BL = ['#1c4426', '#2a5e2e', '#3e7e38', '#5c9e46', '#86c05a'].map(A), FLW = ['#e0782a', '#ffb050'].map(A), St = ['#2e302e', '#464844', '#62645e', '#80827a', '#a0a298'].map(A), MO = ['#3a6a30', '#5a8a3a'].map(A);
+  for (let k = 0; k < 6; k++) pixTree(x, 14 + k * 15 + Math.floor(R() * 6), 133 + Math.floor(R() * 6), 8 + R() * 3, BL, R, { flowers: FLW });
+  for (let k = 0; k < 3; k++) pixTree(x, lw - 12 - k * 16, 136 + Math.floor(R() * 4), 7 + R() * 3, BL, R);
+  for (const [rx, w2] of [[4, 22], [lw - 34, 24], [Math.round(lw * 0.5), 12]]) basaltRock(x, rx, 136, w2, 10, St, R, MO);
+  return c;
+}
+
