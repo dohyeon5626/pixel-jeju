@@ -73,7 +73,7 @@ const KEYMAP = {
   KeyP: 'pause', Escape: 'pause', Enter: 'start', KeyM: 'mute', KeyR: 'retry', KeyQ: 'quit',
 };
 const holders = {};
-function press(k, src = 'x') { const s = holders[k] || (holders[k] = new Set()); if (!s.size) pressed[k] = true; s.add(src); held[k] = true; }
+function press(k, src = 'x') { const s = holders[k] || (holders[k] = new Set()); if (!s.has(src)) pressed[k] = true; s.add(src); held[k] = true; }   // 같은 동작의 다른 키(Shift 누른 채 X)도 새 입력
 function release(k, src = 'x') { const s = holders[k]; if (!s) return; s.delete(src); held[k] = s.size > 0; }
 function releaseAll() { for (const k in holders) holders[k].clear(); for (const k in held) held[k] = false; }
 function tap(k) { pressed[k] = true; }
@@ -87,6 +87,7 @@ window.addEventListener('keydown', e => {
   if (state === 'title' && !(G && G.go) && !e.repeat && !howto && !dexView && (e.code === 'ArrowUp' || e.code === 'ArrowDown' || e.code === 'KeyW' || e.code === 'KeyS')) { menuSel = (menuSel + (e.code === 'ArrowUp' || e.code === 'KeyW' ? 5 : 1)) % 6; Sound.sfx.select(); return; }
   // 도감 · 조작법: ↑(W)는 점프(=연습 시작)가 아니라 고르기 — 도감에선 한 줄 위로, 조작법에선 무시 (연습은 Space · Z · C · Enter)
   if (state === 'title' && !(G && G.go) && (dexView || howto) && (e.code === 'ArrowUp' || e.code === 'KeyW')) { if (dexView && !e.repeat) { const n = Object.keys(PATTERNS).length; dexSel = (dexSel + n - 5) % n; Sound.sfx.select(); } return; }
+  if (!e.repeat && holders[k]) holders[k].delete(e.code);   // 반복 아닌 keydown = 손을 뗐다 다시 누름 (⌘ 조합 등으로 keyup을 놓쳐도 다음 입력이 씹히지 않게)
   if (!e.repeat || (!held[k] && (k === 'left' || k === 'right'))) press(k, e.code);
 });
 window.addEventListener('keyup', e => { const k = KEYMAP[e.code]; if (k) release(k, e.code); });
@@ -2839,10 +2840,12 @@ function updatePlayer(dt) {
   P.confuseT = Math.max(0, (P.confuseT || 0) - dt);
   const dir = (ctrl ? (held.right ? 1 : 0) - (held.left ? 1 : 0) : 0) * (P.confuseT > 0 ? -1 : 1);   // 사투리 혼란: 좌우 반전
   if (pressed.jump) { P.buffer = BUFFER; pressed.jump = false; } else P.buffer -= dt;
-  if (pressed.roll) { P.rollBuf = BUFFER; pressed.roll = false; } else P.rollBuf = (P.rollBuf || 0) - dt;
+  // 쿨다운 끝나기 직전(0.3초 안)에 누른 구르기 · 던지기는 버리지 않고 풀리는 순간 나감
+  const rollBuf = () => Math.max(BUFFER, Math.min(0.3, (P.rollT > 0 ? P.rollT + ROLL_CD : 0) + Math.max(0, P.rollCD) + 0.05));
+  if (pressed.roll) { P.rollBuf = rollBuf(); pressed.roll = false; } else P.rollBuf = (P.rollBuf || 0) - dt;
   // ↓/S: 공중이면 내려찍기, 땅이면 구르기
-  if (pressed.down) { pressed.down = false; if (!P.onGround && GROUND - P.y > 20) P.poundBuf = BUFFER; else P.rollBuf = BUFFER; } else P.poundBuf = (P.poundBuf || 0) - dt;
-  if (pressed.throw) { P.throwBuf = BUFFER; pressed.throw = false; } else P.throwBuf = (P.throwBuf || 0) - dt;
+  if (pressed.down) { pressed.down = false; if (!P.onGround && GROUND - P.y > 20) P.poundBuf = BUFFER; else P.rollBuf = rollBuf(); } else P.poundBuf = (P.poundBuf || 0) - dt;
+  if (pressed.throw) { P.throwBuf = Math.max(BUFFER, Math.min(0.3, Math.max(0, P.throwCD, P.rollT) + 0.05)); pressed.throw = false; } else P.throwBuf = (P.throwBuf || 0) - dt;
   if (held.throw && ctrl) P.throwBuf = Math.max(P.throwBuf, 0.02);
   if (!ctrl) { P.buffer = 0; P.rollBuf = 0; P.throwBuf = 0; }
   P.coyote = P.onGround ? COYOTE : P.coyote - dt;
