@@ -767,3 +767,184 @@ class Shot {
   }
 }
 
+// ═════════════════════════════════════════════════════════════
+//  밈 이벤트 컷: "이벤트 발생!" 경고 → 오른쪽에서 초상이 쓱 → 공격 → 쓱 퇴장
+//  (때릴 수도 밟을 수도 없음. 초상은 화면 가장자리의 벽 역할)
+// ═════════════════════════════════════════════════════════════
+const EV_WARN = 0.7, EV_IN = 0.3, EV_OUT = 0.35;
+class EventCut {
+  constructor(pat, key) {
+    this.pat = pat; this.key = key; this.t = 0; this.stT = 0; this.state = 'warn';
+    // 오른쪽 · 왼쪽 어디서든 나옴 (왼쪽이면 초상을 좌우반전해 플레이어를 바라보게)
+    this.side = Math.random() < 0.5 ? 1 : -1; this.x = this.offX(); this.face = -this.side; this.say = null; this.talkT = 0; this.shakeT = 0; this.jy = 0;
+    Sound.sfx.siren();
+  }
+  get img() { const p = portraitOf(this.key); if (this.side > 0) return p; return p._flip || (p._flip = Object.assign(flipC(p), { cell: p.cell })); }
+  get home() { return this.side > 0 ? W - this.img.width + 4 : -4; }
+  offX() { return this.side > 0 ? W + 4 : -this.img.width - 4; }
+  // 공격이 나가는 안쪽 가장자리 · 플레이어 쪽 방향
+  inner() { return this.side > 0 ? this.x + 8 : this.x + this.img.width - 8; }
+  get dir() { return -this.side; }
+  get y0() { return GROUND + 6 - this.img.height + (this.sink || 0) - Math.round(this.jy || 0); }
+  eyePos() { const e = EVENTS[this.key].eyes, k = this.img.cell || 2; return e ? [this.x + Math.round((e[0][0] + e[1][0]) / 2 * k), this.y0 + e[0][1] * k + 1] : this.mouthPos(); }
+  mouthPos() { return [this.x + Math.round(this.img.width * (this.side > 0 ? 0.4 : 0.6)), this.y0 + Math.round(this.img.height * 0.62)]; }
+  headPos() { return [this.x + Math.round(this.img.width * (this.side > 0 ? 0.2 : 0.8)), this.y0 + 14]; }
+  // ── 보스 모션: 공격마다 몸을 크게 써서 박동감 있게 ──
+  //  slam(웅크림→도약→쾅, onLand 콜백) · lunge(앞으로 튀어나옴) · sway(물결처럼 휘청) · lean(몸을 내밀어 클로즈업) · spin(좌우로 빙글빙글 베기)
+  move(kind, onLand) { const dur = { slam: 0.78, lunge: 0.45, sway: 0.9, lean: 0.6, spin: 0.5 }[kind] || 0.5; this.motion = { kind, t: 0, dur, onLand, landed: false, side0: this.side }; if (kind === 'slam' || kind === 'lunge') Sound.sfx.whoosh(); }
+  motionXf() {   // 현재 모션의 그리기 변형 { sx, sy, ox, jy, shear }
+    const m = this.motion; if (!m) return null;
+    const k = Math.min(1, m.t / m.dur), d = this.dir;
+    if (m.kind === 'slam') {
+      if (k < 0.32) { const a = k / 0.32; return { sx: 1 + 0.07 * a, sy: 1 - 0.09 * a, ox: 0, jy: 0 }; }
+      if (k < 0.66) { const a = (k - 0.32) / 0.34; return { sx: 0.95, sy: 1.07, ox: 0, jy: Math.sin(a * Math.PI) * 54 }; }
+      const a = (k - 0.66) / 0.34; return { sx: 1.1 - 0.1 * a, sy: 0.86 + 0.14 * a, ox: 0, jy: 0 };
+    }
+    if (m.kind === 'lunge') { const a = Math.sin(k * Math.PI); return { sx: 1 + 0.06 * a, sy: 1 + 0.04 * a, ox: d * 30 * a, jy: 6 * a }; }
+    if (m.kind === 'lean') { const a = Math.sin(Math.min(1, k * 1.6) * Math.PI / 2) * (k > 0.75 ? (1 - k) / 0.25 : 1); return { sx: 1 + 0.14 * a, sy: 1 + 0.14 * a, ox: d * 10 * a, jy: 0 }; }
+    if (m.kind === 'sway') return { sx: 1, sy: 1, ox: 0, jy: Math.sin(k * Math.PI) * 10, shear: Math.sin(m.t * 10) * 7 * (1 - k) };
+    if (m.kind === 'spin') return { sx: Math.abs(Math.cos(m.t * 26)) * 0.9 + 0.1, sy: 1, ox: 0, jy: Math.sin(k * Math.PI) * 8 };
+    return null;
+  }
+  // 자리 바꾸기 액션: 할망은 크게 뛰어넘고, 뭐랭하멘은 화면이 지직거리며 순간이동, 설문대할망은 땅속으로 잠겼다가 반대편에서 솟음
+  swapTo() {
+    const nside = -this.side, nx = nside > 0 ? W - this.img.width + 4 : -4;
+    if (P.x > nx - 24 && P.x < nx + this.img.width + 24) return false;   // 숨비가 그 자리에 있으면 자리 바꾸기는 건너뜀 (벽에 밀려 순간이동하지 않게)
+    this.swap = { t: 0, dur: this.key === 'seolmun' ? 1.5 : this.key === 'murang' ? 0.7 : 0.8, x0: this.x, x1: nx, side: nside, flipped: false };
+    if (this.key === 'halmang') { Sound.sfx.whoosh(); { const hl = new HopLand(nx + this.img.width / 2, this.img.width - 30, 0.8 * G.speed); hl.chain = true; spawnHz(hl); } }
+    else if (this.key === 'murang') { Sound.sfx.zap(); flashFx(0.03, '#d8f0ff'); }
+    else { Sound.sfx.erupt(); shake(0.2); }
+    return true;
+  }
+  // 칼 든 하르방: 다른 자리로 펄쩍 (착지 자리에 그림자 예고 + 착지 충격)
+  hopTo(nx, side) { this.hop = { x0: this.x, x1: nx, t: 0, dur: 0.62, side }; Sound.sfx.whoosh(); { const hl = new HopLand(nx + this.img.width / 2, this.img.width - 26, 0.62 * G.speed); hl.chain = true; spawnHz(hl); } }
+  setState(s) { this.state = s; this.stT = 0; if (s === 'leave') dust((this.leaveX ?? this.home) + 10, GROUND, 6, 1, 1); }
+  sayIt(text, kind, dur = 1.2) { this.say = { text, kind, t: 0, dur }; this.talkT = Math.min(dur, 0.6); Sound.sfx.babble(text, kind === 'big'); }
+  talk(t = 0.25) { this.talkT = t; }
+  leave() {
+    this.hop = null; this.jy = 0; this.swap = null; this.glitch = 0; this.motion = null;
+    if (this.state === 'warn') this.setState('gone');
+    else if (this.state !== 'leave' && this.state !== 'gone') { this.leaveX = this.x; this.setState('leave'); this.say = null; }
+  }
+  update(dt) {
+    this.t += dt; this.stT += dt; this.talkT -= dt; this.shakeT -= dt;
+    if (this.say) { this.say.t += dt; if (this.say.t > this.say.dur) this.say = null; }
+    if (this.state === 'warn' && this.stT >= EV_WARN) { this.setState('enter'); Sound.sfx.rise2(); }
+    this.glow = Math.max(0, (this.glow || 0) - dt / G.speed);
+    if (this.key === 'seolmun' && this.state === 'warn') { if (Math.random() < dt * 30) fx({ x: this.home + rand(0, this.img.width), y: GROUND - 1, vx: rand(-20, 20), vy: -rand(30, 90), grav: 400, life: 0.4, kind: 'chunk', size: 1, col: pick([C.soil[3], C.stone[3]]) }); if (Math.random() < dt * 8) shake(0.05); }
+    if (this.state === 'enter' && this.key === 'seolmun') {
+      // 땅을 가르고 솟아오름: 흙더미가 흘러내리고 화면이 울림
+      const RISE = 1.0; this.x = this.home; this.sink = Math.round(this.img.height * (1 - easeOut(Math.min(1, this.stT / RISE))));
+      if (Math.random() < dt * 50) fx({ x: this.x + rand(4, this.img.width - 4), y: GROUND - rand(0, 4), vx: rand(-40, 40), vy: -rand(60, 160), grav: 420, life: rand(0.4, 0.8), kind: 'chunk', size: randi(1, 2), col: pick([C.soil[2], C.soil[3], C.leaf[2], C.stone[3]]) });
+      if (Math.random() < dt * 12) { dust(this.x + rand(0, this.img.width), GROUND, 2, 0, 2); shake(0.06); }
+      if (this.stT >= RISE) { this.sink = 0; this.setState('act'); shake(0.4); flashFx(0.04, '#fff2d8'); Sound.sfx.boom(); this.glow = 0.6; }
+    } else if (this.state === 'enter') {
+      this.x = Math.round(lerp(this.offX(), this.home, easeOut(Math.min(1, this.stT / EV_IN))));
+      if (this.stT >= EV_IN) { this.setState('act'); shake(0.3); flashFx(0.03, '#fff2d8'); for (let i = 0; i < 18; i++) fx({ x: this.side > 0 ? W + rand(0, 40) : -rand(0, 40), y: rand(-VOFF + 20, GROUND - 6), vx: -this.side * rand(380, 520), life: 0.5, kind: 'streak', len: randi(10, 24), col: 'rgba(255,244,224,0.55)' }); }
+    } else if (this.state === 'leave' && this.key === 'seolmun') {
+      if (this.sink0 === undefined) this.sink0 = this.sink || 0;
+      this.sink = Math.round(lerp(this.sink0, this.img.height, Math.min(1, this.stT / 0.9) ** 2)); if (Math.random() < dt * 20) dust(this.x + rand(0, this.img.width), GROUND, 2, 0, 1);
+      if (this.stT >= 0.9) this.setState('gone');
+    } else if (this.state === 'leave') {
+      this.x = Math.round(lerp(this.leaveX ?? this.home, this.offX(), Math.min(1, this.stT / EV_OUT) ** 2));
+      if (this.stT >= EV_OUT) this.setState('gone');
+    }
+    if (this.motion) {
+      const m = this.motion; m.t += dt;
+      if (m.kind === 'slam' && !m.landed && m.t >= m.dur * 0.66) { m.landed = true; shake(0.4); kick(0, 3); Sound.sfx.boom(); Sound.duck(0.3); dust(this.x + 12, GROUND, 6, -1, 2); dust(this.x + this.img.width - 12, GROUND, 6, 1, 2); fx({ x: this.x + this.img.width / 2, y: GROUND - 1, kind: 'ring', big: true, life: 0.4, col: C.yel[3] }); if (m.onLand) m.onLand(); }
+      if (m.kind === 'spin') { const flip = Math.floor(m.t * 13) % 2; if (flip !== m.lastFlip) { m.lastFlip = flip; fx({ x: this.inner(), y: this.y0 + this.img.height * 0.4, kind: 'flare', size: 7, life: 0.12, col: '#fff4e0' }); Sound.sfx.tink(); } }
+      if (m.t >= m.dur) this.motion = null;
+    }
+    if (this.swap && this.state === 'act') {
+      const s = this.swap; s.t += dt; const k = Math.min(1, s.t / s.dur);
+      if (this.key === 'halmang') { this.x = Math.round(lerp(s.x0, s.x1, k)); this.jy = Math.sin(k * Math.PI) * 90; if (Math.random() < dt * 30) fx({ x: this.x + this.img.width / 2 + rand(-30, 30), y: this.y0 + rand(10, this.img.height), vx: -Math.sign(s.x1 - s.x0) * rand(80, 160), life: 0.3, kind: 'streak', len: randi(6, 14), col: 'rgba(255,244,224,0.5)' }); }
+      else if (this.key === 'murang') { this.glitch = k < 0.85 ? 1 : 0; if (k > 0.45 && !s.flipped) { this.x = s.x1; } }
+      else { this.sink = Math.round(this.img.height * (k < 0.5 ? Math.min(1, k / 0.4) : Math.max(0, 1 - (k - 0.6) / 0.4))); if (k > 0.5 && !s.flipped) this.x = s.x1; if (Math.random() < dt * 30) dust(this.x + rand(0, this.img.width), GROUND, 2, 0, 1); }
+      if (k > 0.5 && !s.flipped) { s.flipped = true; this.side = s.side; }
+      if (k >= 1) { this.swap = null; this.jy = 0; this.sink = 0; this.glitch = 0; this.x = s.x1; shake(0.3); if (this.key === 'halmang') { Sound.sfx.boom(); dust(this.x + 10, GROUND, 6, -1, 2); dust(this.x + this.img.width - 10, GROUND, 6, 1, 2); fx({ x: this.x + this.img.width / 2, y: GROUND - 1, kind: 'ring', big: true, life: 0.35, col: C.yel[3] }); } else if (this.key === 'seolmun') { Sound.sfx.boom(); burst(this.x + this.img.width / 2, GROUND - 4, 14, [C.soil[2], C.soil[3], C.leaf[2], WATER[3]], 140, 0.6, 420, 'chunk'); } else { flashFx(0.03, '#d8f0ff'); } }
+    }
+    if (this.hop && this.state === 'act') {
+      const h = this.hop; h.t += dt; const k = Math.min(1, h.t / h.dur);
+      this.x = Math.round(lerp(h.x0, h.x1, k)); this.jy = Math.sin(k * Math.PI) * 70;
+      if (k > 0.5 && h.side !== undefined) { this.side = h.side; h.side = undefined; }
+      if (k >= 1) { this.hop = null; this.jy = 0; shake(0.3); kick(0, 3); if (this.key === 'knife' && Math.random() < 0.5) { const cx = this.x + this.img.width / 2, step16 = 60 / (Sound.tempo || 150) / 4 * G.speed, pside = Math.sign(P.x - cx) || 1, skipJ = clamp(Math.round((Math.abs(P.x - cx) - this.img.width / 2) / 26), 1, 6); for (let j = 1; j <= 6; j++) for (const sd of [-1, 1]) { if (sd === pside && Math.abs(j - skipJ) <= 1) continue; const xx = cx + sd * (this.img.width / 2 + j * 26); if (xx > 10 && xx < W - 10) spawnHz(new Rise(xx, 0.45 * G.speed + j * step16 * 1.5, 0.14 * G.speed, true, j)); } if (this.pat) this.pat.next = Math.max(this.pat.next, 1.9); } /* 하르방 도미노: 착지점에서 양옆으로 하르방이 차례로 솟음 */ Sound.sfx.boom(); dust(this.x + 10, GROUND, 6, -1, 2); dust(this.x + this.img.width - 10, GROUND, 6, 1, 2); burst(this.x + this.img.width / 2, GROUND - 4, 12, [C.stone[2], C.stone[3], C.soil[3]], 140, 0.6, 420, 'chunk'); fx({ x: this.x + this.img.width / 2, y: GROUND - 1, kind: 'ring', big: true, life: 0.35, col: C.yel[3] }); }
+    }
+    // 가장자리에 있을 때만 그쪽을 막음 (가운데로 뛰어나온 동안은 양쪽 다 열림)
+    const atR = this.x > W - this.img.width - 12, atL = this.x < 8, on = (this.state === 'act' || this.state === 'enter') && !this.hop && !this.swap;
+    G.arenaR = on && atR ? Math.min(W - 8, this.x + 10) : W - 8;
+    G.arenaL = on && atL ? Math.max(8, this.x + this.img.width - 10) : 8;
+  }
+  draw() {
+    if (this.state === 'warn' || this.state === 'gone') return;
+    const img = this.img, talking = this.talkT > 0;
+    const x = this.x + (this.shakeT > 0 ? (Math.floor(this.t * 40) % 2 ? 2 : -2) : 0);
+    const y = this.y0 + (talking && Math.floor(this.t * 16) % 2 ? -2 : 0);
+    g.save(); g.beginPath(); g.rect(x - 40, -VOFF, img.width + 80, GROUND + VOFF + 1); g.clip();
+    const xf = this.motionXf();
+    if (xf && !this.glitch) {
+      const dw = Math.round(img.width * xf.sx), dh = Math.round(img.height * xf.sy), dx = Math.round(x + (img.width - dw) / 2 + xf.ox), dy = Math.round(y + img.height - dh - xf.jy);
+      if (xf.shear) { for (let yy = 0; yy < img.height; yy += 4) { const off = Math.round(xf.shear * (1 - yy / img.height)); g.drawImage(img, 0, yy, img.width, 4, dx + off, dy + yy, img.width, 4); } }
+      else g.drawImage(img, dx, dy, dw, dh);
+    }
+    else if (this.glitch) { for (let yy = 0; yy < img.height; yy += 3) { if (Math.random() < 0.35) continue; const off = Math.random() < 0.3 ? randi(-6, 6) : 0; g.drawImage(img, 0, yy, img.width, 3, x + off, y + yy, img.width, 3); } g.fillStyle = 'rgba(160,220,255,0.18)'; g.fillRect(x, y + randi(0, img.height), img.width, 2); }
+    else g.drawImage(img, x, y);
+    if (this.glow > 0 && EVENTS[this.key].eyes) { const k = img.cell || 2; for (const [ex, ey] of EVENTS[this.key].eyes) { const px = x + ex * k, py = y + ey * k; g.fillStyle = C.yel[3]; g.fillRect(px - 3, py, 7, 2); g.fillStyle = '#fff4e0'; g.fillRect(px - 1, py, 3, 2); if (Math.floor(this.t * 20) % 2) { g.fillStyle = 'rgba(255,208,112,0.5)'; g.fillRect(px - 6, py, 13, 1); g.fillRect(px, py - 4, 1, 9); } light(px, py, 14, '#ffd070', this.glow); } }
+    if (portraitOf(this.key) === STAND_IN) drawStr('?', x + 46, y + 32, { font: 'b', color: MU('#8a84a0'), align: 'center', outline: null });
+    g.restore();
+  }
+  // 초상 아래 장식 띠 (글자라서 2px 처리 뒤에 그림)
+  drawOverlay() {
+    if (this.state === 'warn' || this.state === 'gone' || (this.sink || 0) > 4 || this.hop) return;
+    const img = this.img, x = this.x;
+    const by = GROUND - 14, bw = img.width - 6;
+    if (this.key === 'halmang') {
+      uiBox(x + 2, by - 1, bw, 13, UI.warn);
+      g.fillStyle = UI.warn; g.fillRect(x + 6, by + 1, 22, 9);
+      uiText('LIVE', x + 17, by + 1, { color: UI.text, align: 'center' });
+      uiText('태풍 특보', x + 32, by + 1);
+    } else if (this.key === 'seolmun') {
+      uiBox(x + 2, by - 1, bw, 13, UI.gold);
+      uiText('탐라 창조 신화', x + bw / 2 + 2, by + 1, { color: UI.gold, align: 'center' });
+    } else if (this.key === 'knife') {
+      uiBox(x + 2, by - 1, bw, 13, UI.warn);
+      uiText('칼춤 생중계', x + bw / 2 + 2, by + 1, { align: 'center' });
+    } else {
+      uiBox(x + 2, by - 1, bw, 13, UI.gold);
+      uiText('@제주어 해석', x + 7, by + 1);
+      const pr = clamp(this.stT / 5, 0, 1);
+      g.fillStyle = UI.lo; g.fillRect(x + 3, by + 10, bw - 2, 1); g.fillStyle = UI.warn; g.fillRect(x + 3, by + 10, Math.round((bw - 2) * pr), 1);
+    }
+  }
+}
+// 이벤트 경고 띠: 오른쪽에서 깜빡이며 "이벤트 발생!"
+
+// 이벤트 투척물: 중력 없이 곧게 날아감. 잠깐 조준선(예고)을 보여준 뒤 발사
+class Zap {
+  constructor(x, y, tx, ty, spr, speed) {
+    const d = Math.hypot(tx - x, ty - y) || 1;
+    this.x = this.ax = x; this.y = this.ay = y; this.vx = (tx - x) / d * speed; this.vy = (ty - y) / d * speed;
+    this.spr = spr; this.t = 0; this.aim = 0.5 * G.speed; this.dodged = false;
+  }
+  update(dt) {
+    this.t += dt;
+    if (this.t < this.aim) return !this.dead;
+    if (!this.launched) { this.launched = true; Sound.sfx.throw(); fx({ x: this.x, y: this.y, kind: 'flare', size: 6, life: 0.15, col: C.org[3] }); }
+    if (Math.random() < dt * 40) fx({ x: this.x, y: this.y, vx: this.vx * 0.2, vy: this.vy * 0.2, life: 0.2, kind: 'trail', col: this.isText ? C.yel[3] : C.org[2] });
+    this.x += this.vx * dt; this.y += this.vy * dt;
+    return !this.dead && this.x > -20 && this.x < W + 20 && this.y > -VOFF - this.spr.height && this.y < GROUND + 10;
+  }
+  boxes() { return this.t < this.aim ? NONE : [{ x: this.x - 4, y: this.y - 4, w: 8, h: 8 }]; }
+  onShot() { this.dead = true; if (this.spr.metal) { spark(this.x, this.y); Sound.sfx.tink(); reward('shatter', this.x, this.y - 8); return true; } burst(this.x, this.y, 8, ['#5e6e34', '#8a9a48'], 70, 0.4, 0); Sound.sfx.splat(); reward('shatter', this.x, this.y - 8); return true; }
+  draw() {
+    if (this.t < this.aim) {
+      if (Math.floor(this.t * 16) % 2) return;
+      const m = Math.hypot(this.vx, this.vy), ux = this.vx / m, uy = this.vy / m;
+      g.fillStyle = C.red[2];
+      for (let i = 1; i < 16; i++) g.fillRect(Math.round(this.ax + ux * i * 10), Math.round(this.ay + uy * i * 10), 2, 2);
+      return;
+    }
+    const spr = this.vx < 0 && this.spr.flip ? this.spr.flip : this.spr;
+    g.drawImage(spr, Math.round(this.x - spr.width / 2), Math.round(this.y - spr.height / 2));
+  }
+}
+
