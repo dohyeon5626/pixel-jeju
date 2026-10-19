@@ -505,3 +505,330 @@ function cjNear4(ph) {   // 앞쪽: 못가 자갈 기슭 · 주황 꽃 덤불 ·
   return c;
 }
 
+// ═════════════════════════════════════════════════════════════
+//  만장굴 — 옆에서 본 용암동굴 (다른 명소처럼 층층이 겹치고, 카메라가 움직이면 층마다 다르게 밀림)
+//   먼 벽: 가로로 흐르는 용암 흐름선 · 두툼한 용암선반 · 벽 밑 등불이 벽을 따뜻하게 비춤 · 오른쪽 끝 이어지는 굴
+//   용암석주(왼쪽): 천장에서 흘러내린 용암이 쌓여 굳은 모래시계 모양 기둥 — 만장굴의 상징, 발치 조명에 금빛
+//   천장: 금 간 현무암 판 · 짧고 뭉툭한 용암종유 · 무너진 천장 구멍(하늘 · 덩굴) → 비스듬한 빛줄기 → 이끼 바닥
+//   놀이 영역 뒤(박쥐 · 낙석이 지나가는 곳)는 중간 밝기로 두고, 가장 어두운 곳은 천장 · 화면 가장자리
+// ═════════════════════════════════════════════════════════════
+const CVR = {   // 같은 밝기 단계끼리 짝: 낮빛 쪽(서늘한 회청) · 가운데(보랏빛 회색) · 등불 쪽(따뜻한 황갈)
+  cool: ['#0b0a0f', '#121219', '#1a1a22', '#22242d', '#2c2f39', '#373b45', '#454a53', '#565c64', '#6b7279', '#868d92', '#a5adb0'],
+  neut: ['#0c0a0d', '#141215', '#1d1a1e', '#262227', '#302b31', '#3c363b', '#4a4347', '#5a5255', '#6c6365', '#827877', '#9c908c'],
+  warm: ['#0e0b0a', '#18120f', '#231a15', '#30231b', '#3e2c21', '#4e3828', '#61452f', '#765438', '#8d6542', '#a6784d', '#c08c58'],
+};
+function cvC(v, w) {   // v: 밝기 0~1 · w: -1 낮빛(서늘) ~ 0 ~ 1 등불(따뜻)
+  const i = clamp(Math.round(v * 10), 0, 10), q = Math.round(clamp(w, -1, 1) * 3) / 3;
+  return q < 0 ? mix(CVR.neut[i], CVR.cool[i], -q) : q > 0 ? mix(CVR.neut[i], CVR.warm[i], q) : CVR.neut[i];
+}
+// 화면 좌표(카메라가 가운데일 때) · y는 캔버스 기준(월드 + 60)
+const CV = {
+  wallLamps: [[150, 182, 1], [346, 182, 0.85]],   // 먼 벽 밑 등불 (x · y · 세기)
+  col: 80, colLamps: [[50, 190], [110, 190]],     // 용암석주 가운데 · 발치 조명
+  hole: [284, 338],                               // 무너진 천장 구멍
+  shaft: { t: [292, 330, 44], b: [252, 314, 192] },   // 빛줄기 위 (왼 · 오 · y) → 아래
+  passage: { cx: 404, hw: 28, top: 118, bot: 183 },   // 오른쪽 끝 이어지는 굴
+};
+function cvLight(sx, sy, colK = 1) {   // 화면 좌표 → [등불빛, 낮빛] · colK: 석주 조명이 미치는 정도 (먼 벽은 덜 받게 해서 석주가 도드라지게)
+  let L = 0;
+  for (const [lx, ly, s] of CV.wallLamps) { const dx = (sx - lx) / 44, dy = (sy - ly) / (sy < ly ? 80 : 12); L += s * Math.exp(-dx * dx - dy * dy); }
+  for (const [lx, ly] of CV.colLamps) { const dx = (sx - lx) / 30, dy = (sy - ly) / (sy < ly ? 150 : 10); L += 0.75 * colK * Math.exp(-dx * dx - dy * dy); }
+  const dx = (sx - 290) / 58, dy = (sy - 104) / 110;
+  return [L, 0.5 * Math.exp(-dx * dx - dy * dy)];
+}
+function cvPut(d, w, i, y, col) { if (i < 0 || i >= w || y < 0) return; const p = (y * w + i) * 4; if (p >= d.length) return; const c = rgb(col); d[p] = c[0]; d[p + 1] = c[1]; d[p + 2] = c[2]; d[p + 3] = 255; }
+function cvBlend(d, w, i, y, col, a) {   // 이미 그린 칸 위에 반투명하게 (빛줄기)
+  if (i < 0 || i >= w || y < 0) return; const p = (y * w + i) * 4; if (p >= d.length) return;
+  const c = rgb(col), a0 = d[p + 3] / 255, ao = a + a0 * (1 - a); if (ao <= 0) return;
+  for (let k = 0; k < 3; k++) d[p + k] = (c[k] * a + d[p + k] * a0 * (1 - a)) / ao;
+  d[p + 3] = ao * 255;
+}
+function cvCell(u, v, seed) {   // 보로노이: [가장자리까지 거리, 칸 번호] — 금 간 천장 판
+  let d1 = 9, d2 = 9, hid = 0; const gu = Math.floor(u), gv = Math.floor(v);
+  for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const cu = gu + a + hash2(gu + a, gv + b, seed), cv = gv + b + hash2(gu + a, gv + b, seed + 1), dd = Math.hypot(u - cu, v - cv); if (dd < d1) { d2 = d1; d1 = dd; hid = hash2(gu + a, gv + b, seed + 2); } else if (dd < d2) d2 = dd; }
+  return [d2 - d1, hid];
+}
+function cvMask(w, h, pts) {   // 다각형 윤곽 → 칸 가림 (경계 반투명은 버림)
+  const c = mkR(w, h), x = c.getContext('2d'); P_.poly(x, pts, '#fff'); const d = x.getImageData(0, 0, w, h).data, m = new Uint8Array(w * h);
+  for (let q = 0; q < w * h; q++) m[q] = d[q * 4 + 3] > 120 ? 1 : 0;
+  return m;
+}
+// 각진 현무암 덩이: 다각형 윤곽 + 면마다 다른 밝기 (빛 받는 면 · 그늘 면) · 면 사이 금 · 셀아웃 테
+//  X: 층 안의 왼쪽 · Y: 바닥 · sh: 층이 쉬는 화면에서 밀리는 만큼(빛 계산용) · opt.moss: 윗면 이끼 · opt.day: 낮빛 세기
+function cvRock(x, X, Y, w, h, R, sh, opt = {}) {
+  const pw = w + 2, phh = h + 2, n = 7 + Math.floor(R() * 3), pts = [];
+  for (let k = 0; k < n; k++) { const a = Math.PI + (k / (n - 1)) * Math.PI, rr = 0.82 + R() * 0.22; pts.push([1 + w / 2 + Math.cos(a) * w / 2 * rr, 1 + h + Math.sin(a) * h * rr]); }
+  pts[0][1] = pts[n - 1][1] = h + 1;
+  const m = cvMask(pw, phh, pts), pb = new PB(pw, phh);
+  const fc = Array.from({ length: 3 + Math.floor(R() * 3) }, () => { const fx = 1 + R() * w, fy = 1 + R() * h, side = (fx - 1 - w / 2) / (w / 2), up = 1 - (fy - 1) / h; return [fx, fy, side * 0.8 + (R() - 0.5) * 0.4, -0.25 - up * 0.75 + (R() - 0.5) * 0.3]; });
+  const [L, D0] = cvLight(X - sh + w / 2, Y - h * 0.6), D = D0 * (opt.day ?? 1), wm = clamp((L * 1.4 - D * 1.2) / (0.25 + L + D), -1, 1);
+  const lx = D > L ? 0.45 : -0.55, ly = -0.75, lz = 0.5, ln = Math.hypot(lx, ly, lz);
+  for (let yy = 0; yy < phh; yy++) for (let xx = 0; xx < pw; xx++) {
+    if (!m[yy * pw + xx]) continue;
+    let b1 = 1e9, b2 = 1e9, f = fc[0]; for (const q of fc) { const dd = (xx - q[0]) ** 2 + ((yy - q[1]) * 1.4) ** 2; if (dd < b1) { b2 = b1; b1 = dd; f = q; } else if (dd < b2) b2 = dd; }
+    const nz = Math.sqrt(Math.max(0.05, 1 - f[2] * f[2] - f[3] * f[3])), lam = Math.max(0, (f[2] * lx + f[3] * ly + nz * lz) / ln);
+    let v = (0.16 + lam * 0.5) * (0.6 + L * 0.8 + D * 0.7) + (vnoise(xx * 0.5 + X, yy * 0.5, 7601) - 0.5) * 0.05;
+    if (Math.sqrt(b2) - Math.sqrt(b1) < 1.1) v *= 0.78;   // 면 사이 모서리 금
+    if (yy >= h) v *= 0.7;   // 바닥에 닿는 아랫단 그늘
+    let col = cvC(clamp(v, 0, 1), wm);
+    if (opt.moss && f[3] < -0.6 && vnoise(xx * 0.4 + X, yy * 0.6, 7602) > 0.45) col = mix(['#22362a', '#30482e', '#425e36', '#587840', '#70904a'][clamp(Math.round(v * 6), 0, 4)], CVR.neut[2], 1 - (opt.day ?? 1) * 0.85);   // 윗면 이끼 (드문드문)
+    pb.set(xx, yy, col);
+  }
+  x.drawImage(selOut(pb, 0.55).canvas(), Math.round(X - 1), Math.round(Y - h - 1));
+}
+function cvGlow(x, cx, cy, rx, ry, col, a) {   // 등불 번짐: 둥근 판 3겹 (픽셀 단위로 끊어지게)
+  x.fillStyle = col;
+  for (const k of [1, 0.66, 0.36]) {
+    x.globalAlpha = a / 3; const ax = rx * k, ay = ry * k;
+    for (let y = -Math.floor(ay); y <= Math.floor(ay); y++) { const hw = Math.round(ax * Math.sqrt(Math.max(0, 1 - (y / ay) ** 2))); if (hw > 0) x.fillRect(Math.round(cx) - hw, Math.round(cy) + y, hw * 2, 1); }
+  }
+  x.globalAlpha = 1;
+}
+function cvLamp(x, X, Y, big) {   // 돌받침 등불: 낮은 현무암 받침 위 네모난 등 (나무 난간 없음) · X,Y: 받침 아래 가운데
+  cvGlow(x, X, Y - 7, big ? 12 : 9, big ? 9 : 7, '#ffc070', 0.32);
+  const w = big ? 9 : 7;
+  px1(x, '#16110e', X - (w >> 1) - 1, Y - 5, w + 2, 5); px1(x, '#4a3424', X - (w >> 1), Y - 5, w, 1); px1(x, '#2e2219', X - (w >> 1), Y - 4, w, 3); px1(x, '#5c4430', X - (w >> 1), Y - 4, 1, 3);   // 받침
+  px1(x, '#2a1c12', X - 2, Y - 10, 5, 5); px1(x, '#ffcf7a', X - 1, Y - 9, 3, 3); px1(x, '#fff3cf', X - 1, Y - 9, 1, 2); px1(x, '#e09040', X + 1, Y - 7, 1, 1);   // 등
+  px1(x, '#3a2a1c', X - 3, Y - 11, 7, 1);   // 지붕
+}
+
+// 먼 벽 (하늘 층 · 움직이지 않음 → 화면 좌표 그대로)
+function caveWall(day) {
+  const H2 = 140 + VOFF, c = mkR(W, H2), x = c.getContext('2d'), id = x.createImageData(W, H2), d = id.data, F = caveWallData();
+  for (let q = 0; q < W * H2; q++) { const L = F.L[q], D = F.D[q] * day; cvPut(d, W, q % W, (q / W) | 0, cvC(F.a[q] * (F.amb[q] + L * 0.66 + D * 0.6) + F.hl[q] * (0.4 + L), (L * 1.5 - D * 1.2) / (0.2 + L + D))); }
+  x.putImageData(id, 0, 0);
+  cavePassage(x, day);
+  return c;
+}
+function caveWallData() {   // 먼 벽의 결(흐름선 · 선반 · 금 · 숨구멍)과 등불 · 낮빛 세기 — 시간대와 상관없어 한 번만 계산
+  if (caveWallData.v) return caveWallData.v;
+  const H2 = 140 + VOFF, n = W * H2, F = { a: new Float32Array(n), hl: new Float32Array(n), L: new Float32Array(n), D: new Float32Array(n), amb: new Float32Array(n) }, R = rng(7001);
+  const base = []; for (let y = 36; y < 188; y += 3 + Math.floor(Math.pow(R(), 1.5) * 10)) base.push(y);
+  const S = base.map((b, k) => ({ b, alb: 1 + (hash2(k, 1, 7003) - 0.5) * 0.2, pits: hash2(k, 2, 7004) < 0.2, s: 0.55 + hash2(k, 3, 7005) * 0.45 }));
+  const U = i => Math.sin(i * 0.011 + 0.7) * 3 + (vnoise(i * 0.018, 0.5, 7002) - 0.5) * 5;
+  const SH = [{ y: 100, s: 7010 }, { y: 152, s: 7020 }];
+  const crack = new Set(); for (const cx0 of [124, 232, 306, 366]) { let cx = cx0, dir = 0; for (let y = 34; y < 92 + (cx0 % 3) * 6; y++) { if (R() < 0.35) dir = Math.round((R() - 0.5) * 2); if (R() < 0.6) cx += dir; crack.add(cx + ',' + y); } }
+  for (let i = 0; i < W; i++) {
+    const u = U(i), bs = S.map((o, k) => o.b + u * (0.4 + 0.6 * o.b / 190) + (vnoise(i * 0.035, k * 1.7, 7006) - 0.5) * 2.4), wb = 183 + Math.round((vnoise(i * 0.04, 4.5, 7011) - 0.5) * 5);
+    const shv = SH.map(o => {
+      const pr = vnoise(i * 0.012 + o.s, 0.5, o.s + 1), top = Math.round(o.y + u * 0.8 + (vnoise(i * 0.03, 1, o.s + 2) - 0.5) * 4);
+      let th = pr < 0.36 ? 0 : Math.round((2 + vnoise(i * 0.06, 2, o.s + 3) * 5) * clamp((pr - 0.36) / 0.12, 0, 1));
+      if (th && vnoise(i * 0.35, 5, o.s + 5) > 0.84) th += 1 + Math.round(vnoise(i * 0.9, 6, o.s + 6));   // 선반 끝에서 흘러내리다 굳은 방울
+      return { top, th, sd: Math.round(3 + vnoise(i * 0.05, 3, o.s + 4) * 4) };
+    });
+    let k = 0;
+    for (let y = 0; y < H2; y++) {
+      while (k < bs.length - 1 && y >= bs[k + 1]) k++;
+      const mot = (fbm(i * 0.016, y * 0.07, 7007) - 0.5) * 0.2;
+      let a = 0.76 + mot, hl = 0;
+      if (y >= bs[0] && y < wb - 2) {
+        const o = S[k], dy = y - Math.floor(bs[k]), on = vnoise(i * 0.022, k * 3.1, 7008) > 0.33;
+        a *= o.alb;
+        if (on && dy === 0) a *= 1 - 0.34 * o.s; else if (on && dy === 1) hl = 0.06 * o.s;   // 흐름선: 골 + 바로 아래 빛 받는 턱
+        if (o.pits && hash2(i, y, 7009) < 0.025) a *= 0.62;   // 숨구멍 많은 지층
+      }
+      for (const s of shv) if (s.th) {
+        const r = y - s.top;
+        if (r === -1) hl = 0.2;
+        else if (r >= 0 && r < s.th) { a = (0.92 - r / s.th * 0.14) * (1 + mot * 0.5); hl = r === 0 ? 0.1 : 0; }
+        else if (r >= s.th && r < s.th + s.sd) { a *= 0.42 + 0.4 * (r - s.th) / s.sd; hl = 0; }
+        else if (r >= s.th + s.sd && r < s.th + s.sd + 4) a *= 0.9;
+      }
+      if (crack.has(i + ',' + y)) { a *= 0.42; hl = 0; } else if (crack.has((i + 1) + ',' + y)) hl = 0.08;
+      if (y >= wb - 3 && y < wb) a *= 0.55 + (wb - 1 - y) * 0.08;   // 벽과 바닥이 만나는 그늘
+      if (y >= wb) a = 0.95 + (vnoise(i * 0.1, y * 0.3, 7012) - 0.5) * 0.2;   // 바닥 (위를 향해 밝음)
+      const [L, D0] = cvLight(i, y, 0.4), vig = 1 - Math.pow(Math.abs(i - W / 2) / (W / 2), 3) * 0.4, q = y * W + i;
+      F.a[q] = a; F.hl[q] = hl; F.L[q] = L; F.D[q] = D0; F.amb[q] = (y < 40 ? 0.2 + y / 40 * 0.1 : 0.3) * vig + (y >= wb ? 0.06 : 0);
+    }
+  }
+  return (caveWallData.v = F);
+}
+// 오른쪽 끝: 벽 속으로 이어지는 갈래 굴 — 안으로 갈수록 작아지며 어두워지는 아치 몇 겹 · 바닥 등불 · 굽이 너머 희미한 빛
+function cavePassage(x, day) {
+  const { cx, hw, top, bot } = CV.passage, vx = cx - 6, vy = bot - 26, ay = top + hw;
+  const ox = cx - hw - 5, oy = top - 5, w = Math.min(W - ox, hw * 2 + 10), h = bot - top + 6, id = x.getImageData(ox, oy, w, h), d = id.data;
+  const inside = (i, y) => { const dx = (i - cx) / hw; return Math.abs(dx) <= 1 && y < bot && y >= ay - Math.sqrt(1 - dx * dx) * (ay - top); };
+  const SC = [1, 0.7, 0.48, 0.32, 0.2], inK = (i, y, k) => inside(vx + (i - vx) / SC[k], vy + (y - vy) / SC[k]);
+  for (let yy = 0; yy < h; yy++) for (let ii = 0; ii < w; ii++) {
+    const i = ox + ii, y = oy + yy;
+    if (!inside(i, y)) {   // 입구 테두리: 벽이 두껍게 보이도록 (왼쪽은 등불빛, 오른쪽은 그늘)
+      if ([[-1, 0], [1, 0], [0, -1], [-2, 0], [2, 0], [0, -2]].some(([a, b]) => inside(i + a, y + b))) { const [L] = cvLight(i, y); cvPut(d, w, ii, yy, cvC(i < cx ? 0.36 + L * 0.4 : 0.16, i < cx ? clamp(L * 1.6, 0, 1) : 0)); }
+      continue;
+    }
+    let k = 0; while (k < SC.length - 1 && inK(i, y, k + 1)) k++;
+    const edgeL = !inK(i - 1, y, k) || !inK(i - 2, y, k), edgeT = !inK(i, y - 1, k), fl = y > vy + (bot - vy) * SC[k] - 3;
+    let v = [0.27, 0.2, 0.14, 0.09, 0.06][k] + (vnoise(i * 0.2, y * 0.2, 7051) - 0.5) * 0.04;
+    if (fl) v += 0.06;   // 각 겹의 바닥
+    if (edgeL && i > vx - 2) v -= 0.05; else if (edgeL || edgeT) v += 0.07 * (1 - k * 0.18);   // 겹마다 왼쪽 · 위 테는 빛, 오른쪽 안벽은 그늘
+    const ed = Math.hypot((i - vx) / (hw * 0.32), (y - vy - 6) / (hw * 0.28)), end = ed < 1 ? (ed < 0.5 ? 0.16 : 0.09) : 0;   // 굽이 너머에서 새어 드는 빛 (두 단계)
+    cvPut(d, w, ii, yy, cvC(clamp(v + end, 0, 1), clamp(0.45 - k * 0.08 + end * 4, 0, 1)));
+  }
+  x.putImageData(id, ox, oy);
+}
+
+// 용암석주 (오름 층 · 0.16배) — 천장 구멍에서 흘러내린 용암이 겹겹이 쌓여 굳은 기둥
+//  둥근 몸통 위에 흘러내린 방울 덩이를 얹은 높이 지도 → 면 기울기로 음영 (덩이 사이 골은 부드럽게 어둡고, 바닥 조명을 향한 아랫면은 금빛)
+function caveColumn() {
+  const p = LAYER_P.oreum, lw = layerW(p), sh = Math.round(20 * p), H2 = 200, c = mk(lw, H2), x = c.getContext('2d'), R = rng(7310), id = x.createImageData(lw, H2), d = id.data;
+  const cx = CV.col + sh, top = 10, bot = 192;
+  const prof = y => {
+    const t = clamp((y - top) / (bot - top), 0, 1);
+    const waist = tt => 9 + Math.sin((tt - 0.2) * 14) * 1.5 + (tt - 0.2) * 7, w = t < 0.2 ? 9 + Math.pow(1 - t / 0.2, 2) * 22 : t < 0.56 ? waist(t) : waist(0.56) + Math.pow((t - 0.56) / 0.44, 1.35) * 34;   // 이음매 없이 이어지게
+    return w + (vnoise(y * 0.07, 0.5, 7301) - 0.5) * 4;
+  };
+  const lean = y => Math.sin(clamp((y - top) / (bot - top), 0, 1) * 2.6 + 0.2) * 3;
+  const blobs = [];
+  for (let y = top + 6; y < bot - 3; y += 4 + R() * 4) {
+    const hw = prof(y), m = cx + lean(y), base = y > bot - 56, n = Math.max(2, Math.round(hw / (base ? 8 : 6)));
+    for (let k = 0; k < n; k++) { const u = (k / (n - 1) - 0.5) * 2 * 0.75 + (R() - 0.5) * 0.3, rx = hw * (0.24 + R() * 0.18) + 2, ry = rx * (base ? 0.7 + R() * 0.4 : 1.6 + R() * 1.2); blobs.push([m + u * (hw - rx * 0.4), Math.min(bot - ry * 0.6, y + ry * 0.5), rx, ry]); }
+  }
+  const x0 = cx - 60, x1 = cx + 60, gw = x1 - x0 + 1, Hm = new Float32Array(gw * H2);
+  for (let y = 0; y < bot; y++) { const hw = prof(Math.max(top, y)) + (y < top ? (top - y) * 1.3 : 0), m = cx + lean(Math.max(top, y)); for (let i = x0; i <= x1; i++) { const dx = (i + 0.5 - m) / hw; Hm[y * gw + i - x0] = Math.abs(dx) < 1 ? Math.sqrt(1 - dx * dx) * hw * 0.75 : 0; } }
+  for (const [bx, by, rx, ry] of blobs) for (let yy = Math.max(0, Math.floor(by - ry)); yy <= Math.min(bot - 1, Math.ceil(by + ry)); yy++) for (let i = Math.max(x0, Math.floor(bx - rx)); i <= Math.min(x1, Math.ceil(bx + rx)); i++) {
+    const nx = (i + 0.5 - bx) / rx, ny = (yy + 0.5 - by) / ry, dd = nx * nx + ny * ny; if (dd >= 1) continue;
+    const q = yy * gw + i - x0, hb = Math.sqrt(1 - dd) * rx * 0.55, m = cx + lean(yy), hw = prof(yy), dx = (bx - m) / hw, base = Math.abs(dx) < 1 ? Math.sqrt(1 - dx * dx) * hw * 0.75 : 0;
+    Hm[q] = Math.max(Hm[q], base * 0.92 * Math.pow(1 - dd, 0.35) + hb);   // 덩이 가장자리는 몸통 면으로 부드럽게 내려앉음
+  }
+  const Hat = (i, y) => (i < x0 || i > x1 || y < 0 || y >= bot) ? 0 : Hm[y * gw + i - x0];
+  const ln = Math.hypot(0, 0.55, 0.83);
+  for (let y = 0; y < bot; y++) for (let i = x0; i <= x1; i++) {
+    const h0 = Hat(i, y); if (h0 <= 0) continue;
+    const gx = (Hat(i + 1, y) - Hat(i - 1, y)) / 2, gy = (Hat(i, y + 1) - Hat(i, y - 1)) / 2, nl = Math.hypot(gx, gy, 1), nx = -gx / nl, ny = -gy / nl, nz = 1 / nl;
+    const [L] = cvLight(i - sh, y), lam = Math.max(0, (ny * 0.55 + nz * 0.83) / ln), side = Math.max(0, -nx * 0.6 + nz * 0.5);   // 바닥 조명(앞 · 아래) · 왼쪽 위 은은한 빛
+    let v = (0.86 + (vnoise(i * 0.3, y * 0.08, 7304) - 0.5) * 0.16) * (0.1 + side * 0.08 + lam * (0.14 + L * 1.3));
+    if (y < top + 16) v *= 0.55 + Math.max(0, y - top) / 36;   // 천장에 붙은 위쪽은 그늘
+    cvPut(d, lw, i, y, cvC(clamp(v, 0, 1), clamp(0.3 + L * 1.5, 0, 1)));
+  }
+  x.putImageData(id, 0, 0);
+  for (const [lx, ly] of CV.colLamps) {   // 바닥 조명: 석주를 올려 비추는 낮은 등
+    const X = lx + sh; cvGlow(x, X, ly - 5, 12, 8, '#ffc070', 0.35);
+    px1(x, '#16110e', X - 4, ly - 4, 9, 4); px1(x, '#3e2c20', X - 3, ly - 4, 7, 1); px1(x, '#ffd890', X - 2, ly - 6, 5, 2); px1(x, '#fff3cf', X - 1, ly - 6, 2, 1);
+  }
+  c.oy = -VOFF;
+  return c;
+}
+
+// 천장 · 구멍 · 빛줄기 · 벽 밑 바위 더미 · 벽 등불 (밭 층 · 0.3배)
+function caveCeil(ph, day) {
+  const p = LAYER_P.field, lw = layerW(p), sh = Math.round(20 * p), H2 = 200, c = mkR(lw, H2), x = c.getContext('2d'), R = rng(7101);
+  let id = x.createImageData(lw, H2), d = id.data;
+  const hx0 = CV.hole[0] + sh, hx1 = CV.hole[1] + sh, hc = (hx0 + hx1) / 2, hw = (hx1 - hx0) / 2;
+  const edge = []; for (let i = 0; i < lw; i++) { let e = 24 + Math.pow(Math.abs(i - lw / 2) / (lw / 2), 2.2) * 24 + Math.sin(i * 0.016 + 0.4) * 3 + (vnoise(i * 0.045, 0.5, 7102) - 0.5) * 9 + (vnoise(i * 0.17, 1.5, 7103) - 0.5) * 3; for (const [lx, lwid, lh] of [[60, 14, 7], [196, 11, 6], [392, 16, 8]]) { const u = (i - lx - sh) / lwid; if (Math.abs(u) < 1) e += Math.cos(u * Math.PI / 2) ** 2 * lh; } const u = (i - hc) / (hw + 26); if (Math.abs(u) < 1) e += Math.pow(1 - u * u, 1.5) * 21; edge.push(Math.round(e)); }   // 화면 가장자리로 갈수록 두꺼운 아치 · 흘러내린 용암 덩이 · 구멍 둘레는 무너진 테두리   // 구멍 둘레는 무너진 테두리라 두툼
+  const holeBot = i => edge[clamp(i, 0, lw - 1)] - 5, inHole = (i, y) => { const hd = holeBot(i); return y < hd && Math.abs(i - hc) / hw < Math.sqrt(Math.max(0, 1 - Math.pow(y / hd, 3))) * (1 + (vnoise(y * 0.35, i > hc ? 1 : 2, 7107) - 0.5) * 0.22); };
+  const sky = ph.sky, night = PHASES.indexOf(ph) === 3, skyT = night ? sky[0] : sky[1], skyB = night ? sky[1] : sky[3], /* 구멍으로 올려다본 머리 위 하늘 · 밤엔 별 */ GR = ['#1e3624', '#2e5230', '#46723a', '#669846', '#8cbc58'].map(k => mix(k, '#141a20', (1 - day) * 0.75)), GF = GR.map(k => mix(k, '#1c2219', 0.3));   // GF: 굴 바닥 식물 (빛줄기 속이라도 조금 가라앉게)
+  for (let i = 0; i < lw; i++) {
+    const [L] = cvLight(i - sh, edge[i] + 8);
+    for (let y = 0; y <= edge[i]; y++) {
+      if (inHole(i, y)) {   // 구멍 너머: 하늘 → 맞은편 구멍 테두리(풀 · 흙 · 낮빛 받은 바위)
+        const fr = holeBot(i) - y, gl = 7 + Math.round(vnoise(i * 0.25, 0.5, 7108) * 3);
+        const col = fr > gl ? (night && hash2(i, y, 7112) < 0.012 ? '#e8e0f0' : mix(skyT, skyB, clamp(y / holeBot(i) * 1.2, 0, 1))) : fr > gl - 2 ? GR[3 + (hash2(i, y, 7109) < 0.3 ? 1 : 0)] : fr > gl - 4 ? GR[2] : fr > 2 ? mix('#5a4a3a', '#141a20', (1 - day) * 0.7) : mix('#7a7a70', '#141a20', (1 - day) * 0.7);
+        cvPut(d, lw, i, y, col); if (fr === gl + 1 && hash2(i, 3, 7110) < 0.45) cvPut(d, lw, i, y - Math.floor(hash2(i, 4, 7111) * 3), GR[3]);   // 풀잎이 하늘로 삐죽
+        continue;
+      }
+      const [cr, hid] = cvCell(i * 0.085, y * 0.16, 7104);
+      let v = 0.11 + hid * 0.09 + (vnoise(i * 0.2, y * 0.3, 7105) - 0.5) * 0.04;
+      if (cr < 0.06) v *= 0.45; else if (cr < 0.12) v += 0.035;   // 금 · 판 가장자리
+      const rim = Math.pow(clamp(1 - (edge[i] - y) / 10, 0, 1), 1.5), nh = Math.exp(-Math.max(0, Math.abs(i - hc) - hw) / 5) * day * (y < holeBot(i) + 3 ? 1 : 0.4);
+      v += rim * (0.15 + L * 0.5) + nh * 0.32;
+      cvPut(d, lw, i, y, cvC(clamp(v, 0, 1), clamp(rim * L * 2 - nh * 1.6, -1, 1)));
+    }
+  }
+  x.putImageData(id, 0, 0);
+  // 구멍 가장자리 풀 · 덩굴 (하늘을 등지고 짙게, 아래로 늘어진 덩굴은 낮빛에 밝게)
+  for (const [bx, by, r] of [[hx0 + 2, holeBot(hx0) - 9, 6], [hx0 + 9, holeBot(hx0 + 9) - 4, 4], [hx1 - 3, holeBot(hx1) - 8, 6], [hx1 - 11, holeBot(hx1 - 11) - 3, 4]]) pixTree(x, bx, by, r, GR, R, { blobs: 6 });
+  for (let k = 0; k < 16; k++) { const vx = Math.round(hx0 - 4 + R() * (hx1 - hx0 + 8)); if (Math.abs(vx - hc) < hw * 0.45) continue; pixVines(x, vx, Math.max(holeBot(vx), edge[clamp(vx, 0, lw - 1)] - 2) - 1, 5 + Math.floor(Math.pow(R(), 1.6) * 36), GR, k * 7 + 3); }   // 길고 짧은 덩굴
+  for (let k = 0; k < 5; k++) { let rx = hx0 + 4 + Math.floor(R() * (hx1 - hx0 - 8)), ry = holeBot(rx) - 1; const len = 6 + Math.floor(R() * 12); for (let q = 0; q < len; q++) { px1(x, mix('#4a3a2c', '#141a20', (1 - day) * 0.7), rx, ry + q); if (R() < 0.3) rx += R() < 0.5 ? -1 : 1; } }   // 늘어진 뿌리
+  for (let k = 0; k < 16; k++) { const gx = Math.round(hx0 - 6 + R() * (hx1 - hx0 + 12)), gy = holeBot(gx); if (Math.abs(gx - hc) < hw * 0.7) continue; px1(x, GR[2 + (k % 2)], gx, gy - 2, 1, 3); }   // 가장자리 풀잎
+  // 용암종유: 짧고 뭉툭한 방울 모양 (석회 동굴처럼 길고 뾰족하지 않게)
+  const drips = [];
+  for (let i = 2; i < lw - 2; i += 3 + Math.floor(R() * 5)) {
+    if (Math.abs(i - hc) < hw + 4) continue;
+    const e = edge[i], len = 2 + Math.floor(Math.pow(R(), 2.2) * 10), w0 = len > 7 ? 3 : len > 3 ? 2 : 1, [L] = cvLight(i - sh, e + 10), wm = clamp(L * 2, 0, 1);
+    for (let j = 0; j < len; j++) {
+      const t = j / len, ww = Math.max(1, Math.round(w0 * (1 - t * 0.55) + (j === len - 2 && len > 4 ? 0.6 : 0)));   // 끝에 맺힌 방울
+      px1(x, cvC(0.2 + t * 0.08 + L * 0.35, wm), i - (ww >> 1), e + j, ww, 1);
+      if (ww > 1) px1(x, cvC(0.32 + L * 0.5, wm), i - (ww >> 1), e + j, 1, 1);   // 빛 받는 왼쪽
+    }
+    if (len > 4) { px1(x, cvC(0.55 + L * 0.4, wm), i, e + len - 1, 1, 1); if (drips.length < 6 && R() < 0.3) drips.push([i, e + len - VOFF, R() * 3, 128 + Math.floor(R() * 6)]); }   // 젖은 끝 반짝 · 물방울 떨어질 자리
+  }
+  // 벽 밑 바위 더미 (빛줄기가 닿는 곳은 이끼 · 고사리)
+  const sx0 = CV.shaft.b[0] + sh, sx1 = CV.shaft.b[1] + sh;
+  for (let i = -6; i < lw; i += 9 + Math.floor(R() * 14)) {
+    const inLight = i > sx0 - 6 && i < sx1, w = 9 + Math.floor(R() * 14), h = 5 + Math.floor(R() * 7);
+    if (i > CV.col + sh - 40 && i < CV.col + sh + 30) continue;   // 석주 발치는 비움
+    cvRock(x, i, 190 + Math.floor(R() * 5), w, h, R, sh, { moss: inLight, day });
+  }
+  for (let k = 0; k < 5; k++) { const fx = sx0 + 6 + Math.floor((k + R() * 0.6) / 5 * (sx1 - sx0 - 12)), fy = 189 + Math.floor(R() * 4); for (const sd of [-1, 1, -0.45, 0.45]) { const len = 5 + Math.floor(R() * 4); for (let q = 0; q < len; q++) { const px = Math.round(fx + sd * q * 0.9), py = Math.round(fy - q * 1.15 + q * q / (len * 1.1)); px1(x, GF[q < 2 ? 1 : 2], px, py); if (q % 2 && q < len - 1) px1(x, GF[3], px, py - 1); } } }   // 고사리 몇 포기: 활처럼 휜 잎
+  for (const [lx, ly] of CV.wallLamps) cvLamp(x, lx + sh, ly + 5, false);
+  // 빛줄기: 구멍에서 이끼 바닥까지 비스듬히 (가장자리는 옅게, 결 따라 밝고 어두운 줄)
+  id = x.getImageData(0, 0, lw, H2); d = id.data;
+  const { t: T, b: B } = CV.shaft, lc = ['#f4faea', '#fff0d2', '#ffd0a0', '#b8c8f0'][PHASES.indexOf(ph)] || '#f4faea', A0 = 0.07 + day * 0.13;
+  for (let y = T[2]; y < B[2]; y++) {
+    const k = (y - T[2]) / (B[2] - T[2]), l = T[0] + (B[0] - T[0]) * k + sh, r = T[1] + (B[1] - T[1]) * k + sh;
+    for (let i = Math.floor(l); i <= Math.ceil(r); i++) {
+      const uu = (i - l) / (r - l), e = clamp(Math.min(uu, 1 - uu) / 0.18, 0, 1), st = vnoise(uu * 6.5 - k * 1.2, k * 2.2, 7106);
+      const a = Math.round(A0 * e * (0.5 + 0.5 * st) * (1 - k * 0.3) / (A0 / 4)) * (A0 / 4);   // 4단계로 끊어서
+      if (a > 0) cvBlend(d, lw, i, y, lc, a);
+    }
+  }
+  x.putImageData(id, 0, 0);
+  c.oy = -VOFF; c.drips = drips; c.shaftCol = lc;
+  c.shaft = { y0: T[2] - VOFF, y1: B[2] - VOFF, l0: T[0] + sh, r0: T[1] + sh, l1: B[0] + sh, r1: B[1] + sh };
+  return c;
+}
+
+// 앞쪽 바닥 (가까운 층 · 0.6배): 새끼줄 용암 바닥 · 등불 비친 물웅덩이 · 양옆 바위 더미 · 길가 돌받침 등불
+function caveNear() {
+  const p = LAYER_P.near, lw = layerW(p), sh = Math.round(20 * p), c = mk(lw, 160), x = c.getContext('2d'), R = rng(7401), id = x.createImageData(lw, 160), d = id.data;
+  const lamps = [32, 198, 372].map(s => s + sh);
+  for (let i = 0; i < lw; i++) {
+    const fb = 134 + Math.round((vnoise(i * 0.05, 0.5, 7402) - 0.5) * 4);
+    for (let y = fb; y < 160; y++) {
+      const t = (y - fb) / (160 - fb), ry = (y - fb) * 1.6, rope = Math.abs(Math.sin((i * 0.16 + Math.sqrt(ry + 1) * 2.2 + vnoise(i * 0.02, ry * 0.05, 7403) * 4) * Math.PI)) < 0.16 && vnoise(i * 0.018, 3, 7404) > 0.42;   // 새끼줄 용암: 흐름 방향으로 휜 주름
+      let L = 0; for (const lx of lamps) { const dx = (i - lx) / (26 + vnoise(i * 0.1, y * 0.3, 7406) * 10), dy = (y - 150) / 9; L += Math.exp(-dx * dx - dy * dy); }   // 등불빛 (가장자리는 울퉁불퉁)
+      const [L0, D0] = cvLight(i - sh, 186 + t * 10);
+      let v = (0.33 + (vnoise(i * 0.06, y * 0.3, 7405) - 0.5) * 0.12) * (0.8 + L * 0.8 + L0 * 0.5 + D0 * 0.5) - t * 0.06 + (rope ? 0.09 : 0);
+      if (y === fb) v += 0.1; else if (y === fb + 1) v += 0.04;   // 바닥 뒤쪽 테 (빛 받는 모서리)
+      cvPut(d, lw, i, y, cvC(clamp(v, 0, 1), clamp((L + L0) * 1.4 - D0, -1, 1)));
+    }
+  }
+  x.putImageData(id, 0, 0);
+  for (let k = 0; k < 6; k++) { const px = Math.floor(R() * lw), py = 141 + Math.floor(R() * 12), w = 8 + Math.floor(R() * 14); px1(x, cvC(0.12, -0.3), px, py, w, 1); px1(x, cvC(0.16, -0.2), px + 1, py + 1, w - 2, 1); px1(x, cvC(0.55, 0.7), px + 2 + Math.floor(R() * (w - 4)), py, 2, 1); }   // 물웅덩이 (등불 비침)
+  for (let k = 0; k < 50; k++) { const px = Math.floor(R() * lw), py = 138 + Math.floor(R() * 19); px1(x, cvC(0.16, 0), px, py, 2, 1); px1(x, cvC(0.4, 0.5), px, py - 1, 1, 1); }   // 자갈
+  // 양옆 바위 더미 (가장자리일수록 크게) · 가운데는 드문드문 작게
+  const rocks = [];
+  for (let i = -10; i < lw; i += 7 + Math.floor(R() * 10)) { const e = Math.min(i, lw - i) / lw; if (e > 0.16 && R() < 0.78) continue; const w = Math.round(8 + R() * 12 + Math.max(0, 0.16 - e) * 90), h = Math.round(w * (0.42 + R() * 0.2)); rocks.push([i, 153 + Math.floor(R() * 4), w, h]); }
+  for (let k = 0; k < 34; k++) rocks.push([Math.floor(R() * lw), 140 + Math.floor(R() * 16), 3 + Math.floor(R() * 6), 2 + Math.floor(R() * 3)]);   // 바닥 곳곳 잔돌
+  rocks.sort((a, b) => a[1] - b[1]).forEach(([rx, ry, w, h]) => cvRock(x, rx, ry, w, h, R, sh));
+  for (const lx of lamps) cvLamp(x, lx, 152, true);
+  c.lamps = lamps;
+  return c;
+}
+// 발밑 길 (땅 층): 어두운 현무암 바닥 · 등불빛 받은 위 가장자리 · 새끼줄 주름
+function caveGround() {
+  const lw = WORLD_W + 8, h = VIEW_H - GROUND + 4, c = mk(lw, h), x = c.getContext('2d'), id = x.createImageData(lw, h), d = id.data, R = rng(7451);
+  for (let i = 0; i < lw; i++) for (let y = 2; y < h; y++) {
+    const top = y < 4, rope = Math.sin((i + Math.sin(y * 0.8 + i * 0.05) * 4) * 0.42 + vnoise(i * 0.04, y * 0.15, 7452) * 5) > 0.75 && vnoise(i * 0.03, 7, 7453) > 0.4;
+    let v = top ? (y === 2 ? 0.58 : 0.47) : 0.34 - (y - 4) * 0.008 + (vnoise(i * 0.07, y * 0.2, 7454) - 0.5) * 0.1 + (rope ? 0.07 : 0);
+    if (y === 2 && vnoise(i * 0.3, 1, 7455) < 0.3) continue;   // 위 가장자리는 들쭉날쭉
+    cvPut(d, lw, i, y, cvC(clamp(v, 0, 1), top ? 0.6 : 0.3));
+  }
+  x.putImageData(id, 0, 0);
+  for (let k = 0; k < 70; k++) { const px = Math.floor(R() * lw), py = 6 + Math.floor(R() * (h - 8)), w = 2 + Math.floor(R() * 3); px1(x, cvC(0.16, 0), px, py, w, 1); px1(x, cvC(0.4, 0.5), px, py - 1, Math.max(1, w - 1), 1); }   // 박힌 돌 조각
+  return c;
+}
+// 가장 앞 (1.3배): 화면 아래를 감싸는 아주 어두운 바위 실루엣 · 위 가장자리에만 등불빛 테
+function caveFront() {
+  const lw = layerW(LAYER_P.front), c = mk(lw, 30), x = c.getContext('2d'), R = rng(7501);
+  const top = new Array(lw).fill(99);
+  const bump = (cx, w, h) => { for (let i = Math.floor(cx - w); i <= Math.ceil(cx + w); i++) { if (i < 0 || i >= lw) continue; const t = (i - cx) / w; if (Math.abs(t) > 1) continue; const y = Math.round(30 - h * Math.pow(1 - t * t, 0.6) - (vnoise(i * 0.3, cx, 7502) - 0.5) * 2); top[i] = Math.min(top[i], y); } };
+  for (let i = -10; i < lw; i += 8 + Math.floor(R() * 12)) { const e = Math.min(i, lw - i); bump(i, 6 + R() * 10, e < 50 ? 12 + R() * 14 : 2 + R() * 5); }
+  for (let i = 0; i < lw; i++) if (top[i] < 30) { px1(x, '#0b090c', i, top[i], 1, 30 - top[i]); px1(x, '#3a2a22', i, top[i], 1, 1); if (hash2(i, 1, 7503) < 0.3) px1(x, '#1c1514', i, top[i] + 1, 1, 1); }
+  return c;
+}
+function buildCaveSet(ph) {
+  const day = [1, 0.85, 0.6, 0.3][PHASES.indexOf(ph)] ?? 1;
+  if (!buildCaveSet.shared) buildCaveSet.shared = { halla: Object.assign(mk(layerW(LAYER_P.hall), 140), { empty: true }), oreum: caveColumn(), near: caveNear(), ground: caveGround(), front: caveFront() };
+  return Object.assign({ sky: caveWall(day), field: caveCeil(ph, day) }, buildCaveSet.shared);
+}
+
