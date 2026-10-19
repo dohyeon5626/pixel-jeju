@@ -2678,3 +2678,150 @@ function startPattern(kind) {
   else if (G.tier === 0 && def.tier === 0 && !def.silent) pat.dur = Math.min(pat.dur, 6);
 }
 
+// ═════════════════════════════════════════════════════════════
+//  스테이지 흐름
+// ═════════════════════════════════════════════════════════════
+function setMode(m) { G.mode = m; G.modeT = 0; }
+// ── 밈 런: 점수가 오를수록 빨라지고, 배경도 제주 곳곳으로 바뀜 ──
+// 단계마다 명소 몇 곳을 돌아다님 (패턴 4개마다 원형 전환으로 다음 명소) — 난이도는 단계 기준 그대로
+const TIERS = [
+  { score: 0, speed: 1.0, theme: 'field', phase: 0, name: '구좌 밭담길', spots: [['field', '구좌 밭담길'], ['grove', '서귀포 귤밭']] },
+  { score: 2500, speed: 1.15, theme: 'coast', phase: 1, name: '성산 일출봉 앞바다', spots: [['coast', '성산 일출봉 앞바다'], ['iho', '이호테우 해변'], ['cheonji', '천지연폭포']] },
+  { score: 6000, speed: 1.3, theme: 'beach', phase: 2, name: '노을 지는 협재', spots: [['beach', '노을 지는 협재'], ['jeongbang', '정방폭포'], ['grove', '노을 귤밭']] },
+  { score: 11000, speed: 1.45, theme: 'field', phase: 3, name: '한라산 불의 밤', spots: [['field', '한라산 불의 밤'], ['grove', '한라산 밤 귤밭']] },
+  { score: 18000, speed: 1.6, theme: 'coast', phase: 3, name: '성산의 밤바다', spots: [['coast', '성산의 밤바다'], ['iho', '이호테우 밤바다']] },
+  { score: 28000, speed: 1.8, theme: 'beach', phase: 3, name: '협재 별밤', spots: [['beach', '협재 별밤'], ['jeongbang', '정방폭포 달밤'], ['cheonji', '천지연 밤 숲']] },
+  { score: 42000, speed: 2.0, theme: 'field', phase: 3, name: '탐라 대혼돈', spots: [['field', '탐라 대혼돈'], ['iho', '이호테우'], ['jeongbang', '정방폭포'], ['grove', '귤밭'], ['cheonji', '천지연'], ['coast', '성산'], ['beach', '협재']] },
+];
+const GRADES = [[0, 'D', '관광객'], [600, 'C', '한달살이'], [1800, 'B', '제주 이주민'], [4000, 'A', '제주 도민'], [8000, 'S', '제주 삼춘'], [15000, 'SS', '해녀 대장'], [28000, 'MASTER', '돌하르방'], [45000, 'LEGEND', '한라산 신령']];
+function gradeOf(sc) { let r = GRADES[0]; for (const gq of GRADES) if (sc >= gq[0]) r = gq; return r; }
+function applyTier(i, instant) {
+  const T = TIERS[i]; G.tier = i; Sound.setKey && Sound.setKey([0, 2, 0, 5, 3, 7, 5][i] || 0, i >= 2); if (!B) Sound.setSong(T.phase >= 3 ? (NIGHT_SONG[T.theme] || 'night') : (THEME_CFG[T.theme] || {}).song || T.theme); G.stage = i + 1; G.speed = T.speed;
+  if (i >= 2 && state === 'play') daily('tier');
+  useTheme(T.theme); if (G.cave) G.caveCD = G.patCount + 12; G.cave = null; G.spot = 0; G.spotAt = 0; G.spotName = T.name; G.phaseTarget = T.phase; if (instant) G.phase = T.phase;
+}
+// 같은 단계 안에서 다음 명소로: 배경 · 음악 · 이름표 · 그 장소 이야기
+// 화면이 가려진 틈(아이리스 한가운데)에 지금 · 다음 시간대 배경을 미리 구워 둠 → 게임 도중 처음 보는 배경을 굽느라 끊기지 않게
+function warmScenes() { if (!SCENES) return; for (const p of new Set([G.phase, G.phaseTarget].flatMap(v => [Math.floor(v), Math.min(PHASES.length - 1, Math.ceil(v))]))) void SCENES[p]; }
+function setSpot(i) { const sp = TIERS[G.tier].spots; G.spot = i; const [th, nm] = sp[i]; useTheme(th); G.spotName = nm; if (!B) Sound.setSong(runSong()); banner(nm, placeFact(th), C.teal[3]); }
+function beginStage() {
+  applyTier(0, true); G.patterns = []; G.rest = 1.0; B = null; clearInputs();
+  G.usedEvents = {}; G.answers = null; G.cutin = null; G.patCount = 0; G.wow = 0;
+  setMode('intro');
+}
+function updateFlow(dt) {
+  G.modeT += dt;
+  const last = G.tier >= TIERS.length - 1;   // 마지막 단계 뒤로도 계속 어려워짐 (언젠가는 쓰러지게)
+  G.diff = Math.min(last ? 7 : 4.5, Math.max(G.diffFloor || 0, G.tier * 0.7 + Math.min(1.2, G.patInTier * 0.15) + (last ? G.patInTier * 0.1 : 0)));
+  if (G.mode === 'intro') { if (G.modeT > 1.8) { setMode('run'); if (best.score > 0) G.rest = Math.max(G.rest, 1.2); } return; }
+  if (G.mode !== 'run') return;
+  G.score += dt * 12 * (todayWx().mult || 1) * ((G.omegiT || 0) > 0 ? 2 : 1);
+  if (G.route && G.route.mod) G.route.mod.tick();   // 구간 변형 규칙
+  if (!noDaily() && !DAILY.wxDone && G.score >= 5000) { DAILY.wxDone = true; G.wxPulse = 1.2; DAILY.pearl = (DAILY.pearl || 0) + 1; saveDaily(); banner(`${todayWx().t} 돌파!`, '진주 +1', UI.gold); Sound.sfx.level(); }
+  if (!G.scoreDaily && G.score >= 3000) { G.scoreDaily = true; daily('score'); }
+  if (!noRecord() && (DAILY.best | 0) > 0 && !G.beatDay && G.score > DAILY.best && G.score <= best.score) { G.beatDay = true; fx({ x: P.x, y: P.y - 12, kind: 'ring', big: true, life: 0.45, col: C.teal[4] }); Sound.sfx.pickup(); G.ammoPulse = 0.25; }
+  if (!noRecord() && best.score > 0 && !G.beatBest && G.score > best.score) { G.beatBest = true; banner('신기록', `이전 최고 ${best.score}점`, UI.gold); Sound.sfx.level(); flashFx(0.03, '#fff2d8'); }
+  if (G.card) { G.card.t += dt / G.speed; if (G.card.t > 1.1) G.card = null; }
+  G.patWait = Math.max(0, (G.patWait || 0) - dt);
+  if (G.pendingPat) { G.pendingPat.t -= dt; if (G.pendingPat.t <= 0) { if (G.patterns.length && !G.patterns.some(p => PATTERNS[p.kind].silent)) startPattern(G.pendingPat.kind), G.patterns[G.patterns.length - 1].paired = true; G.pendingPat = null; } }
+  for (const p of G.patterns) {
+    if (p.wait > 0) { p.wait -= dt; continue; }
+    G.curPat = p; const nw = G.warnings.length;
+    p.update(dt);
+    for (let i = nw; i < G.warnings.length; i++) G.warnings[i].pat = p;
+    G.curPat = null;
+    if (p.done) { p.end(); G.ended.push(p); }
+  }
+  G.patterns = G.patterns.filter(p => !p.done);
+  G.ended = G.ended.filter(e => {
+    const live = G.hz.some(h => h.pat === e) || G.spawnQ.some(h => h.pat === e) || G.warnings.some(w => w.pat === e);
+    if (live) return true;
+    finishPattern(e); return false;
+  });
+  // 삼다수: 16~24초마다 높은 곳에 한 병 (2단 점프로 닿는 높이) — 세 병 모이면 파도
+  G.nextWater = (G.nextWater ?? 12) - dt / G.speed;
+  if (G.nextWater <= 0 && G.mode === 'run' && !P.dead) { G.nextWater = rand(24, 34); const p = new Pickup('water', rand(G.arenaL + 24, G.arenaR - 24), 0); p.float = true; p.y0 = p.y = GROUND - rand(90, 125); p.life = 9; spawnArcFx(p.x, p.y); G.pickups.push(p); }
+  // 공중 귤 줄: 9~14초마다 머리 위에 아치로 (이벤트 중엔 쉼)
+  G.nextArc = (G.nextArc ?? 6) - dt / G.speed;
+  if (G.nextArc <= 0 && !B && G.mode === 'run' && (G.warnings.length || G.patterns.some(p => ['plane', 'bee', 'gull', 'meteor', 'parcel', 'harvest', 'typhoon', 'glider', 'dolphin', 'crow', 'dialect'].includes(p.kind)))) G.nextArc = 1.5;
+  if (G.nextArc <= 0 && !B && G.mode === 'run') {
+    G.nextArc = rand(9, 14); const cx = rand(60, W - 60), id = (G.arcId = (G.arcId || 0) + 1);
+    for (let i = 0; i < 5; i++) { const t = i / 4, p = new Pickup('tang', cx + (t - 0.5) * 70, 0); p.float = true; p.arc = id; p.y0 = p.y = GROUND - 62 - Math.sin(t * Math.PI) * 74; p.life = 6; p.vy = 0; spawnArcFx(p.x, p.y); G.pickups.push(p); }
+  }
+  G.nextTang -= dt;
+  if (G.nextTang <= 0) {
+    const r = Math.random(), r2 = Math.random(), extra = G.hp <= 1 ? null : r2 < 0.03 ? (G.ammo < G.ammoMax / 3 ? 'basket' : null) : r2 < 0.05 && G.tier >= 1 ? 'omegi' : r2 < 0.07 && G.tier >= 1 ? 'pinwheel' : null;
+    const kind = extra || (G.hp < G.maxHp && r < 0.08 ? 'bong' : (G.tier >= 2 && r < 0.16 ? 'fake' : (G.tier >= 1 && !P.shield && r > 0.97 ? 'shield' : 'tang')));
+    G.pickups.push(new Pickup(kind, rand(20, W - 20), -VOFF - 10, rand(-20, 20), 0)); G.nextTang = rand(2.4, 4.2) / (todayWx().tang || 1);
+  }
+  if (!G.patterns.length) {
+    // 다음 단계(배속)로 넘어갈 때: 화면을 비운 뒤 원형 전환
+    const nt = !G.practice && !G.route && G.tier + 1 < TIERS.length && G.score >= TIERS[G.tier + 1].score;
+    if (nt) { G.tierWait = (G.tierWait || 0) + dt; if (G.tierWait > 2 && G.hz.some(h => !h.ambient) && !B) { for (const h of G.hz) dust(h.x || W / 2, GROUND, 3, 0, 1); G.hz = []; G.spawnQ.length = 0; G.warnings = []; } }
+    if (nt && !G.hz.some(h => !h.ambient) && !G.spawnQ.length && !G.warnings.length && !G.iris && !B && G.choseTier !== G.tier + 1) { if (!G.choice) offerUpgrade(); return; }
+    if (nt && !G.hz.some(h => !h.ambient) && !G.spawnQ.length && !G.warnings.length && !G.iris && !B) {
+      G.tierWait = 0; G.patInTier = 0;
+      const ni = G.tier + 1;
+      G.iris = { t: 0, dur: 0.9, mid: () => { applyTier(ni, true); fx({ x: P.x, y: P.y - 14, kind: 'flare', size: 16, life: 0.35, col: C.yel[3] }); for (let i = 0; i < 18; i++) fx({ x: W + rand(0, 40), y: rand(-VOFF + 20, GROUND - 6), vx: -rand(380, 520), life: 0.5, kind: 'streak', len: randi(10, 24), col: 'rgba(255,244,224,0.55)' }); G.hz = []; G.interp = null; G.music = { style: 'chip', song: runSong(), tempo: 138 * G.speed }; Sound.setTempo(138 * G.speed); banner(`속도 UP ×${TIERS[ni].speed.toFixed(2)}`, TIERS[ni].name, C.yel[2]); Sound.sfx.level(); } };
+      G.rest = 1.6; return;
+    }
+    if (nt) return;
+    if (G.hz.some(h => !h.ambient) || G.spawnQ.length || G.warnings.length) return;
+    if (G.route && G.route.slot >= 4 && !G.iris) {   // 구간의 보스까지 넘음
+      if (!G.route.offered) { G.route.offered = true; giveAmmo(5); offerUpgrade(); return; }
+      if (G.choice) return;
+      const nl = (G.route.leg + 1) % G.route.legs.length;   // 한라산 다음은 다시 구좌 (다음 바퀴 · 더 빠르게)
+      G.iris = { t: 0, dur: 0.9, mid: () => { if (nl === 0) G.route.lap = (G.route.lap || 0) + 1; G.route.leg = nl; G.route.slot = 0; G.route.offered = false; G.route.plan = shuffled(G.route.legs[nl].pool).slice(0, 3); G.hz = []; G.patInTier = 0; G.interp = null; routeLegSetup(); routeMod(); banner(`${G.route.lap ? G.route.lap + 1 + '바퀴 · ' : ''}${nl + 1}구간 · ${G.route.legs[nl].name}`, `${G.route.mod ? G.route.mod.t + ' · ' : ''}보스 ${EVENTS[G.route.legs[nl].boss].name}`, C.yel[2]); Sound.sfx.level(); } };
+      G.rest = 1.6; return;
+    }
+    G.rest -= dt / G.speed;
+    if (G.rest <= 0 && !G.iris) {
+      // 만장굴: 아주 가끔 짧게 들어가는 특별 구간 — 박쥐 · 낙석 · 관광객 · 사투리만, 보스 없음
+      if (G.cave && G.cave.left <= 0) { const bk = G.cave.back; G.cave = null; G.caveCD = G.patCount + randi(16, 24); G.iris = { t: 0, dur: 0.9, mid: () => { useTheme(bk[0]); G.spotName = bk[1]; if (!B) Sound.setSong(runSong()); banner('굴 밖으로', '다시 ' + bk[1], C.teal[3]); } }; G.rest = 1.0; return; }
+      if (!G.cave && !G.route && !G.practice && !B && G.tier >= 1 && G.patCount >= (G.caveCD || 12) && Math.random() < 0.1) { G.cave = { left: randi(2, 3), back: [THEME, G.spotName] }; G.iris = { t: 0, dur: 0.9, mid: () => { useTheme('cave'); G.spotName = '만장굴'; Sound.setSong(runSong()); banner('만장굴 탐험', placeFact('cave'), C.teal[3]); } }; G.rest = 1.0; return; }
+      const sp = TIERS[G.tier].spots;   // 패턴 4개마다 다음 명소로 (화면이 빈 틈에)
+      if (!G.cave && !G.route && !G.practice && !B && sp && sp.length > 1 && G.patInTier > 0 && G.patInTier % 4 === 0 && G.spotAt !== G.patInTier) { G.spotAt = G.patInTier; const ni = (G.spot + 1) % sp.length; G.iris = { t: 0, dur: 0.9, mid: () => setSpot(ni) }; G.rest = 1.2; return; }
+      G.patCount++; G.patInTier++;
+      let first;
+      if (G.cave) { first = pick(['crow', 'meteor', 'suitcase', 'dialect'].filter(k => k !== G.lastKind)); G.cave.left--; }
+      else if (G.route) { const L = G.route.legs[G.route.leg]; first = G.route.slot < 3 ? G.route.plan[G.route.slot] : L.boss; G.route.slot++; }
+      else if (G.practice) first = G.practice;
+      else if (G.patCount <= (best.score < 1800 ? 4 : 1)) first = best.score < 1800 ? ['rise', 'hop', 'suitcase', 'harvest'][G.patCount - 1] : pick(['rise', 'hop', 'suitcase', 'harvest', 'parcel']);
+      else if (G.patCount >= (G.evAt || (best.score < 1800 ? 6 : 5))) {
+        let last = ''; try { last = localStorage.getItem('jeju.lastEv') || ''; } catch (e) { /* 무시 */ }
+        const EVQ = ['halmang', 'murang', 'knife', 'seolmun']; first = G.nextEvent || EVQ[(EVQ.indexOf(last) + 1) % EVQ.length]; let after = first; if (first === 'seolmun' && G.tier < 1) { first = G.nextEvent === 'seolmun' && last === 'knife' ? 'murang' : pick(['knife', 'murang']); after = 'seolmun'; } G.nextEvent = EVQ[(EVQ.indexOf(after) + 1) % EVQ.length];
+        try { localStorage.setItem('jeju.lastEv', after); } catch (e) { /* 무시 */ }   // 대체로 나온 이벤트가 아니라 순서상 자리를 저장 (순환이 굳지 않게)
+        G.evAt = G.patCount + Math.round(randi(4, 6) * Math.max(1, G.speed / 1.3));   // 고배속엔 공격이 짧아지니 이벤트 사이 공격 수를 늘림
+      }
+      else if (best.score >= 1800 && G.patCount === 2 && todayWx().w) { const w = todayWx().w, ks = Object.keys(w).filter(k => PATTERNS[k]); first = ks.filter(k => !(themeCfg().ban || []).includes(k)).sort((a, b) => w[b] - w[a])[0] || 'rise'; }
+      else {
+        const wx0 = todayWx(), pool = Object.keys(PATTERNS).filter(k => (PATTERNS[k].tier <= G.tier + (best.score >= 1800 && wx0.w && wx0.w[k] ? 1 : 0) || (G.tier === 0 && G.patCount >= 6 && ['gull', 'plane', 'glider', 'meteor', 'dialect'].includes(k))) && !(themeCfg().ban || []).includes(k) && k !== G.lastKind && !PATTERNS[k].big && !(PATTERNS[k].silent && !PATTERNS[k].repeat && G.usedEvents[k]) && !(k === 'meteor' && THEME === 'coast') && !(k === 'dolphin' && THEME === 'field'));
+        const fresh = pool.filter(k => !(G.recent || []).includes(k)), wx = todayWx(), cand = fresh.length ? fresh : pool, wOf = k => ((wx.w && wx.w[k]) || 1) * patWeight(k, G.tier);
+        let r = Math.random() * cand.reduce((a, k) => a + wOf(k), 0); first = cand[cand.length - 1];
+        for (const k of cand) { r -= wOf(k); if (r <= 0) { first = k; break; } }
+      }
+      if (!G.route && !G.practice && G.tier >= TIERS.length - 1) { G.speed = Math.min(2.7, G.speed + 0.03); Sound.setTempo(138 * G.speed); if (G.music) G.music.tempo = 138 * G.speed; }   // 마지막 단계: 패턴마다 조금씩 더 빨라짐
+      startPattern(first);
+      // 함께 나와도 피할 길이 남는 가벼운 패턴끼리만 겹침
+      const pairable = ['hop', 'suitcase', 'harvest', 'gull'], REMIX = { wind: 'gull', plane: 'hop', bee: 'gull', car: 'harvest', pony: 'gull' };
+      if (!G.practice && !G.route && !G.cave && G.tier >= (first === 'pony' || first === 'car' ? 1 : 3) && REMIX[first] && !(themeCfg().ban || []).includes(REMIX[first]) && Math.random() < 0.3 && !G.pendingPat) G.pendingPat = { kind: REMIX[first], t: 2.4 };
+      const dual = pairable.includes(first) ? (G.tier >= 4 ? 0.25 : G.tier >= 2 ? 0.1 : 0) : 0;
+      if (!G.practice && !G.route && !G.cave && !PATTERNS[first].silent && Math.random() < dual) { const s2 = pick(pairable.filter(k => k !== first && !(themeCfg().ban || []).includes(k) && PATTERNS[k].tier <= G.tier && !(G.recent || []).includes(k))); if (s2) G.pendingPat = { kind: s2, t: 2.0 }; }
+      G.lastKind = first; G.rest = Math.max(0.9, 1.8 - G.tier * 0.15);
+      if (PATTERNS[first].silent && !PATTERNS[first].event) G.usedEvents[first] = true;
+      if (PATTERNS[first].event) G.usedEvents = {};
+    }
+  }
+}
+function finishPattern(p) {
+  if (PATTERNS[p.kind].silent && !PATTERNS[p.kind].event) return;
+  if (p.paired) { if (!p.hit && !P.dead) giveStar(p.kind); return; }   // 겹쳐 나온 패턴은 WOW를 따로 주지 않음
+  if (!p.hit && !P.dead) {
+    const streak = G.wowStreak = (G.wowStreak || 0) + 1, bonus = Math.round((150 + Math.min(500, Math.floor(G.score * 0.03)) + Math.min(5, streak - 1) * 50) * (todayWx().mult || 1) * (PATTERNS[p.kind].event ? 2 : 1));   // 보스(이벤트)를 안 맞고 넘기면 2배
+    G.score += bonus; G.wow++; G.bestWowStreak = Math.max(G.bestWowStreak || 0, streak); daily('wow3', streak, true);
+    G.wowFx = { t: 0, bonus, streak }; giveStar(p.kind);
+    fx({ x: P.x, y: P.y - 12, kind: 'ring', big: G.tier < 5, life: 0.45, col: UI.gold }); for (let i = 0; i < (G.tier >= 5 ? 6 : 10); i++) fx({ x: P.x, y: P.y - 14, vx: rand(-60, 60), vy: rand(-160, -80), grav: 260, life: rand(0.5, 0.8), kind: 'ember' });
+    Sound.sfx.wow();
+  }
+}
+
