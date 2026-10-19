@@ -948,3 +948,245 @@ class Zap {
   }
 }
 
+// ═════════════════════════════════════════════════════════════
+//  웨이브 패턴
+// ═════════════════════════════════════════════════════════════
+class Pattern { constructor(dur) { this.t = 0; this.dur = dur; } get done() { return this.t >= this.dur; } end() {} }
+class PatRise extends Pattern {
+  constructor() { super(7.5); this.next = 0.3; }
+  update(dt) {
+    this.t += dt; this.next -= dt;
+    if (this.next > 0 || this.t > this.dur - 1.2) return;
+    const D = G.diff, warn = Math.max(0.6, 0.95 - D * 0.06) * G.speed;
+    if (Math.random() < (D >= 0.5 ? 0.5 : 0.3) && !this.justWaved && !this.paired && G.patterns.length <= 1) {
+      // 돌하르방 행렬: 땅이 갈라지며 하르방이 16분음표 박자로 쭈루루룩 차례로 솟음
+      const mode = pick(D >= 1 ? ['sweep', 'converge', 'pingpong', 'gap'] : ['sweep', 'sweep', 'gap']), step16 = 60 / (Sound.tempo || 138) / 4 * G.speed;
+      const lead = beatLead(warn), hold = 0.14 * G.speed, n = Math.ceil((W - 32) / 26) + 1, xs = Array.from({ length: n }, (_, i) => 16 + i * (W - 32) / (n - 1)), dir = pick([-1, 1]);
+      const at = (i) => dir > 0 ? i : n - 1 - i;
+      if (mode === 'sweep' || mode === 'gap') { const gap = mode === 'gap' ? randi(3, n - 5) : -9; xs.forEach((x, i) => { const j = at(i); if (Math.abs(j - gap) <= 1) return; spawnHz(new Rise(x, lead + j * step16, hold, true, j)); }); this.next = 2.4 + n * step16; }
+      else if (mode === 'converge') { xs.forEach((x, i) => { if (i === n >> 1) return; spawnHz(new Rise(x, lead + Math.min(i, n - 1 - i) * step16 * 1.3, hold, true, i)); }); this.next = 2.6 + n * step16 * 0.7; }   // 만나는 가운데 한 칸은 비움
+      else { xs.forEach((x, i) => { const j = at(i); spawnHz(new Rise(x, lead + j * step16, hold, true, j)); if (j < n - 3) spawnHz(new Rise(x, lead + (2 * n - 1 - j) * step16 + 2 * 60 / (Sound.tempo || 138) * G.speed, hold, true, j)); }); this.next = 3 + n * step16 * 2; }   // 되돌아올 땐 끝 세 칸은 비워 둠 (돌아서는 자리 = 안전지대)
+      this.justWaved = true; Sound.sfx.alarm();
+    } else {
+      this.justWaved = false;
+      const n = 1 + (Math.random() < 0.25 + D * 0.12 ? 1 : 0) + (D >= 3 && Math.random() < 0.35 ? 1 : 0);
+      const xs = [clamp(P.x + rand(-10, 10), 16, W - 16)];
+      for (let k = 0; xs.length < n && k < 40; k++) { const x = rand(16, W - 16); if (xs.every(o => Math.abs(o - x) > 40)) xs.push(x); }
+      xs.forEach(x => spawnHz(new Rise(x, warn, 0.8)));
+      this.next = Math.max(0.65, 1.4 - D * 0.12);
+    }
+  }
+}
+class PatHop extends Pattern {
+  constructor() { super(7); this.next = 0.2; }
+  update(dt) {
+    this.t += dt; this.next -= dt;
+    if (this.next > 0 || this.t > this.dur - 1) return;
+    const dir = pick([-1, 1]); spawnHz(new Hopper(dir));
+    if (G.diff >= 2 && Math.random() < 0.3) spawnHz(new Hopper(-dir));
+    this.next = Math.max(0.5, 1.2 - G.diff * 0.1) * rand(0.8, 1.2);
+  }
+}
+class PatMeteor extends Pattern {
+  constructor() { super(8.5); this.next = 1.4; const cf = themeCfg(); if (cf.indoor) { Sound.sfx.rumble(); shake(0.5); } else { if (cf.volcano) G.volcano.erupt = this.dur; Sound.sfx.erupt(); shake(0.6); flashFx(0.07, '#ff9a3a'); } }   // 동굴에선 천장이 우르르 (화산 분화 효과 없음)
+  update(dt) {
+    this.t += dt; this.next -= dt;
+    if (this.next > 0 || this.t > this.dur - 1.4) return;
+    const D = G.diff, fall = Math.max(0.85, 1.2 - D * 0.05) * G.speed;
+    if (D >= 1 && !this.barraged && !G.hz.some(h => h instanceof Meteor && h.phase !== 'boom' && (h.phase === 'fall' || h.phase === 'lava')) && Math.random() < 0.35) {
+      // 화산탄 줄폭격: 화산 쪽에서부터 8분음표마다 한 발씩 줄지어 떨어짐 · 숨비 근처에 두 칸짜리 빈자리
+      this.barraged = true; const step8 = 60 / (Sound.tempo || 138) / 2 * G.speed, xs = []; for (let x = 18; x < G.arenaR - 10; x += 40) xs.push(x);
+      const near = xs.reduce((bi, x, i) => Math.abs(x - P.x) < Math.abs(xs[bi] - P.x) ? i : bi, 0), gap = clamp(near + pick([-1, 0, 1]), 0, xs.length - 2), rev = Math.random() < 0.5;
+      const lead = beatLead(fall); xs.forEach((x, i) => { if (i === gap || i === gap + 1) return; const j = rev ? xs.length - 1 - i : i; const m = new Meteor(x, lead + j * step8); m.chain = true; spawnHz(m); });
+      if (themeCfg().indoor) Sound.sfx.rumble(); else Sound.sfx.erupt(); shake(0.4); this.next = 2.2 + xs.length * step8; return;
+    }
+    const tx = Math.random() < 0.6 ? P.x + rand(-40, 40) : rand(10, W - 10);
+    spawnHz(new Meteor(tx, fall));
+    if (D >= 2 && Math.random() < 0.3) spawnHz(new Meteor(tx + pick([-1, 1]) * rand(40, 70), fall + 0.15));
+    this.next = Math.max(0.3 * G.speed, 0.24, 0.65 - D * 0.07) * rand(0.8, 1.2);   // 고배속에서도 실제로 0.3초에 한 발 이하
+  }
+}
+class PatPony extends Pattern {
+  constructor() { super(8); this.next = 0.2; }
+  update(dt) {
+    this.t += dt; this.next -= dt;
+    if (this.next > 0 || this.t > this.dur - 2) return;
+    const dir = pick([-1, 1]), n = Math.min(4, 1 + randi(0, Math.floor(1 + G.diff)));
+    G.warnings.push({ side: -dir, t: 0, dur: 1.0 * G.speed, spawn: () => {
+      let off = 0;
+      for (let i = 0; i < n; i++) { spawnHz(new Pony(dir, off)); off += 28 + (Math.random() < 0.5 ? rand(2, 8) : rand(76, 104)); }
+      Sound.sfx.neigh();
+    } });
+    this.next = Math.max(1.6, 2.8 - G.diff * 0.2);
+  }
+}
+class PatWind extends Pattern {
+  constructor() { super(7.5); this.dir = pick([-1, 1]); this.next = 1.0; this.started = false; Sound.sfx.whoosh(); }
+  update(dt) {
+    this.t += dt; this.next -= dt;
+    if (this.t > 0.8) { this.started = true; G.windTarget = this.dir * Math.min(52, 48 + G.diff * 6); }   /* 맞바람에도 움직일 수 있게 */
+    if (Math.random() < dt * 30) fx({ x: this.dir > 0 ? -10 : W + 10, y: rand(20, GROUND - 2), vx: this.dir * rand(220, 320), life: 1.6, kind: 'streak', len: randi(6, 16), col: 'rgba(255,244,224,0.5)' });
+    if (this.started && Math.random() < dt * 12) fx({ x: this.dir > 0 ? -4 : W + 4, y: rand(90, GROUND), vx: this.dir * rand(90, 160), vy: rand(-20, 20), life: 2.5, col: pick([C.yel[2], C.yel[3], C.leaf[3]]), kind: 'petal' });
+    if (this.started && Math.random() < dt * 4) Sound.sfx.gust();
+    if (!this.started || this.next > 0 || this.t > this.dur - 1) return;
+    const pb = Math.random() < 0.14 ? new Tewak(this.dir) : new Pebble(this.dir);
+    if (pb instanceof Pebble) { if (this.lastLow && pb.y < GROUND - 24) pb.x -= this.dir * 55; this.lastLow = pb.y > GROUND - 10; }   // 낮은 돌 뒤 높은 돌은 착지할 틈을 두고
+    spawnHz(pb);
+    this.next = Math.max(0.24 * G.speed, Math.max(0.22, 0.55 - G.diff * 0.06) * rand(0.7, 1.3));
+  }
+  end() { G.windTarget = 0; }
+}
+const QUIZ = [
+  { q: "'하영'은 무슨 뜻?", a: '많이', b: '조금' }, { q: "'ᄒᆞᆫ저옵서예'는?", a: '어서 오세요', b: '혼자 오세요' },
+  { q: "'속솜ᄒᆞ라'는?", a: '조용히 해', b: '속상하다' }, { q: "'재게재게'는?", a: '빨리빨리', b: '천천히' },
+  { q: "'게메'는?", a: '글쎄', b: '게다가' }, { q: "'무사?'는?", a: '왜?', b: '무사히' },
+  { q: "'폭싹 속았수다'는?", a: '수고했어요', b: '완전 속았다' }, { q: "'놀멍 쉬멍'은?", a: '놀면서 쉬면서', b: '놀고 싶다' },
+  { q: "'이디'는?", a: '여기', b: '어디' }, { q: "'몽캐지 말라'는?", a: '꾸물대지 마', b: '뭉치지 마' },
+  { q: "'맨도롱 또똣'은?", a: '알맞게 따뜻한', b: '시원한' }, { q: "'삼춘'은 누구?", a: '동네 어르신', b: '아빠 동생만' },
+  { q: "'바당'은?", a: '바다', b: '바닥' }, { q: "'도새기'는?", a: '돼지', b: '도시락' },
+  { q: "'지슬'은?", a: '감자', b: '이슬' }, { q: "'감저'는?", a: '고구마', b: '감자' },
+  { q: "'ᄒᆞᆫ디'는?", a: '함께', b: '혼자' }, { q: "'와리지 말라'는?", a: '서두르지 마', b: '웃지 마' },
+  { q: "'지꺼지다'는?", a: '기쁘다', b: '시끄럽다' }, { q: "'졸바로'는?", a: '똑바로', b: '졸면서' },
+  { q: "'낭'은?", a: '나무', b: '낭떠러지' }, { q: "'어멍'은?", a: '어머니', b: '엄청' },
+];
+class Answer {
+  constructor(text, x, ok) { this.text = text; this.x = x; this.y = GROUND - 50; this.ok = ok; this.t = 0; this.spr = uiSprite(text, ok === undefined ? UI.gold : UI.gold); }
+  update(dt) { this.t += dt; this.y = GROUND - 50 + Math.round(Math.sin(this.t * 3) * 3); return !this.dead; }
+  box() { const s = this.spr; return { x: this.x - s.width / 2, y: this.y, w: s.width, h: s.bodyH }; }
+  draw() {
+    const s = this.spr, k = easeBack(Math.min(1, this.t / 0.3));
+    g.drawImage(s, Math.round(this.x - s.width / 2), Math.round(this.y + (1 - k) * 8));
+    if (this.t > 0.4 && Math.floor(this.t * 3) % 2) { const ax = Math.round(this.x), ay = this.y + s.bodyH + 3; g.fillStyle = INK; g.fillRect(ax - 3, ay - 1, 7, 5); g.fillStyle = C.yel[3]; g.fillRect(ax, ay, 1, 3); g.fillRect(ax - 1, ay + 1, 3, 1); g.fillRect(ax - 2, ay + 2, 5, 1); }
+  }
+}
+class PatQuiz extends Pattern {
+  constructor() {
+    super(7.5); const q = pick(QUIZ); this.q = q;
+    const left = Math.random() < 0.5;
+    this.list = [new Answer(q.a, left ? W / 2 - 76 : W / 2 + 76, true), new Answer(q.b, left ? W / 2 + 76 : W / 2 - 76, false)];
+    G.answers = this.list; Sound.sfx.quiz();
+    G.banners = G.banners.filter(b => !b.quiz); G.banners.splice(G.banners[0] && G.banners[0].t > 0 ? 1 : 0, 0, { title: '제주어 시험', sub: q.q, col: C.yel[2], t: 0, dur: this.dur, quiz: true });
+  }
+  update(dt) {
+    this.t += dt;
+    for (const a of this.list) a.update(dt);
+    const pb = playerBox();
+    for (const a of this.list) if (!a.dead && overlap(pb, a.box())) {
+      this.list.forEach(o => { o.dead = true; burst(o.x, o.y + 6, 10, o.ok ? [C.yel[3], '#ffffff'] : ['#a8a0b8'], 70, 0.5, 120); });
+      if (a.ok) { giveStar('quiz'); giveAmmo(3); addScore(300, a.x, a.y - 6); popup('정답! 귤 +3', a.x, a.y - 16, C.yel[2], 'b', true); Sound.sfx.clear(); }
+      else { popup(`오답 · 정답은 '${this.q.a}'`, a.x, a.y - 16, '#c8c0d8', 's'); Sound.sfx.empty(); }
+      this.t = Math.max(this.t, this.dur - 0.8); G.banners = G.banners.filter(b => !b.quiz);
+    }
+  }
+  end() { G.answers = null; G.banners = G.banners.filter(b => !b.quiz); }
+}
+// ── ᄒᆞᆫ저옵서예~: 관광객 캐리어 ──
+class Suitcase {
+  constructor(dir, off) { this.dir = dir; this.k = randi(0, SUITCASES.length - 1); this.big = SUITCASES[this.k].big; this.x = dir > 0 ? -14 - off : W + 14 + off; this.y = GROUND; this.vy = 0; this.stompable = true; this.speed = rand(115, 150) + G.diff * 10; this.hop = Math.random() < 0.35; this.dodged = false; this.bouncy = true; this.rot = 0; }
+  update(dt) {
+    this.x += this.dir * this.speed * dt; this.rot += dt * 18;
+    if (this.hop) { this.vy += 700 * dt; this.y += this.vy * dt; if (this.y >= GROUND) { this.y = GROUND; this.vy = -Math.abs(this.vy) * 0.22; if (Math.abs(this.vy) < 25) { this.vy = 0; this.hop = false; } dust(this.x, GROUND, 2); } }
+    if (this.x > -10 && this.x < W + 10 && Math.random() < dt * 10) fx({ x: this.x - this.dir * 6, y: GROUND, vx: -this.dir * 20, vy: -10, life: 0.25, kind: 'puff', size: 1 });
+    return !this.dead && (this.dir > 0 ? this.x < W + 30 : this.x > -30);
+  }
+  boxes() { const s = SUITCASES[this.k].r; return [{ x: this.x - s.width / 2 + 2, y: this.y - s.height + 6, w: s.width - 4, h: s.height - 7 }]; }
+  // 밟으면 뚜껑이 열리며 짐이 와르르 (밟기 보상)
+  kill(by) { this.dead = true; burst(this.x, this.y - 10, 16, ['#f4f0e0', '#e87a9a', '#4aa3ec', '#f2c84a'].map(c => mute(c)), 110, 0.6, 360, 'chunk'); Sound.sfx.shatter(); reward(by === 'stomp' ? 'stompKill' : 'shatter', this.x, this.y - 20); }
+  onShot() { this.kill('shot'); return true; }
+  draw() { const s = SUITCASES[this.k][this.dir > 0 ? 'l' : 'r']; drawShadow(this.x, s.width - 2); g.drawImage(s, Math.round(this.x - s.width / 2), Math.round(this.y - s.height + 3)); }
+}
+// ── 똥돼지 질주 ──
+class Pig {
+  constructor(dir, off) { this.dir = dir; this.x = dir > 0 ? -16 - off : W + 16 + off; this.y = GROUND; this.vy = 0; this.bouncy = true; this.speed = (rand(175, 215) + G.diff * 12) * Math.min(1, 1.35 / G.speed); this.anim = Math.random() * 4; this.leap = Math.random() < 0.3 + G.diff * 0.08; this.leaped = false; this.dodged = false; this.bouncy = true; }
+  update(dt) {
+    this.x += this.dir * this.speed * dt; this.anim += dt * this.speed / 12;
+    if (this.leap && !this.leaped && Math.abs(this.x - P.x) < 130) { this.leaped = true; this.vy = -230; Sound.sfx.oink(); dust(this.x, GROUND, 4, 0, 1); fx({ x: this.x, y: GROUND - 18, kind: 'flare', size: 5, life: 0.15, col: C.yel[3] }); }
+    if (this.y < GROUND || this.vy < 0) { this.vy += 760 * dt; this.y += this.vy * dt; if (this.y >= GROUND) { this.y = GROUND; this.vy = 0; dust(this.x, GROUND, 3); } }
+    if (this.x > -10 && this.x < W + 10 && Math.random() < dt * 18) dust(this.x - this.dir * 10, GROUND, 1, -this.dir);
+    return !this.dead && (this.dir > 0 ? this.x < W + 30 : this.x > -30);
+  }
+  boxes() { return [{ x: this.x - 11, y: this.y - 14, w: 22, h: 12 }]; }
+  draw() { const f = PIG[Math.floor(this.anim) % 4][this.dir > 0 ? 'r' : 'l'], bob = this.leap && !this.leaped ? -Math.round(Math.abs(Math.sin(this.anim * 1.57)) * 3) : 0; drawShadow(this.x, 20); g.drawImage(f, Math.round(this.x - f.ax), Math.round(this.y - f.ay) + bob); }
+  onBounce() { Sound.sfx.oink(); this.squash = 0.15; return true; }   // 밟으면 꿀꿀 · 등을 디딤돌 삼아 튀어 오름
+  onShot(s) { spark(s.x, s.y); Sound.sfx.oink(); return true; }
+}
+class PatSuitcase extends Pattern {
+  constructor() { super(7.5); this.next = 0.3; this.flash = 1.5; }
+  update(dt) {
+    this.t += dt; this.next -= dt; this.flash -= dt;
+    if (this.flash <= 0 && this.t < this.dur - 1) { this.flash = rand(1.4, 2.4); flashFx(0.03, '#fff4e0'); Sound.sfx.shutter(); }
+    if (this.next > 0 || this.t > this.dur - 2) return;
+    const dir = pick([-1, 1]), n = 1 + randi(0, Math.min(3, 1 + Math.floor(G.diff)));
+    G.warnings.push({ side: -dir, kind: 'case', t: 0, dur: Math.max(0.6, 0.9 - G.diff * 0.06) * G.speed, spawn: () => { let off = 0; for (let i = 0; i < n; i++) { spawnHz(new Suitcase(dir, off)); off += rand(30, 70); } Sound.sfx.roll(); } });
+    this.next = Math.max(1.1, 2.0 - G.diff * 0.18);
+  }
+}
+class PatPig extends Pattern {
+  constructor() { super(7); this.next = 0.3; Sound.sfx.oink(); }
+  update(dt) {
+    this.t += dt; this.next -= dt;
+    if (this.next > 0 || this.t > this.dur - 1.8) return;
+    const dir = pick([-1, 1]), n = 1 + randi(0, Math.min(2, Math.floor(G.diff)));
+    G.warnings.push({ side: -dir, kind: 'pig', t: 0, dur: Math.max(0.6, 0.9 - G.diff * 0.06) * G.speed, spawn: () => { let off = 0; for (let i = 0; i < n; i++) { spawnHz(new Pig(dir, off)); off += rand(60, 110); } Sound.sfx.oink(); } });
+    this.next = Math.max(1.2, 2.1 - G.diff * 0.16);
+  }
+}
+class PatHarvest extends Pattern {
+  constructor() { super(8); this.next = 0.5; }
+  update(dt) {
+    this.t += dt; this.next -= dt;
+    if (this.next > 0 || this.t > this.dur - 1.2) return;
+    const x = rand(14, W - 14);
+    if (Math.random() < 0.45 + G.diff * 0.05) { const sl = Math.max(1, G.speed / 1.5), r = new Rotten(x, -VOFF - 10, 0, 40 / sl); r.grav = 560 / (sl * sl); r.falling = true; r.life = 3.2 * sl; spawnHz(r); G.decals.push({ x, t: 0, life: 0.9 * sl, mark: true }); }   // 고배속에선 천천히 떨어져 실제 경고 시간이 0.5초 넘게
+    else G.pickups.push(new Pickup('tang', x, -VOFF - 10, rand(-20, 20), 20));
+    this.next = Math.max(0.12 * G.speed, 0.16, 0.42 - G.diff * 0.05) * rand(0.7, 1.3);   // 실제로 0.12초에 하나 이하
+  }
+}
+class PatTyphoon extends Pattern {   // 태풍 상륙: 정전 → 먹구름 · 비바람 · 갈래 번개 (번개 칠 때 잠깐 보임)
+  constructor() { super(9); this.next = 1.2; this.bolt = 1.4; this.dir = pick([-1, 1]); G.dark = 0.01; G.storm = 0; G.stormDir = this.dir; Sound.sfx.whoosh(); }
+  update(dt) {
+    this.t += dt; this.next -= dt; this.bolt -= dt;
+    const out = this.t > this.dur - 0.8;
+    G.dark = out ? Math.max(0, G.dark - dt * 2) : this.t < 0.75 ? (Math.floor(this.t * 12) % 3 === 1 ? 0.12 : Math.min(1, this.t * 1.6)) : Math.min(1, G.dark + dt * 2);   // 처음엔 전기가 나가듯 깜빡이며 어두워짐
+    G.storm = out ? Math.max(0, G.storm - dt * 1.5) : Math.min(1, G.storm + dt * 1.2);
+    G.windTarget = this.dir * Math.min(52, 30 + G.diff * 5);
+    const d = this.dir, up = d > 0 ? -60 : 60;
+    if (Math.random() < dt * 75) fx({ x: rand(0, W) + up, y: -VOFF - 6, vx: d * rand(80, 110), vy: rand(320, 380), life: 0.9, kind: 'rain', len: randi(5, 7), near: true, col: 'rgba(205,220,245,0.7)' });   // 앞 빗줄기
+    if (Math.random() < dt * 55) fx({ x: rand(0, W) + up, y: -VOFF - 6, vx: d * 60, vy: 240, life: 1.2, kind: 'rain', len: 3, col: 'rgba(165,180,215,0.35)' });   // 먼 빗줄기
+    if (Math.random() < dt * 4) fx({ x: d > 0 ? -6 : W + 6, y: rand(40, GROUND - 6), vx: d * rand(170, 250), vy: rand(-30, 20), life: 2.6, kind: 'petal', col: pick([C.leaf[2], C.leaf[3], C.org[2]]) });   // 바람에 날리는 잎
+    if (Math.random() < dt * 7) fx({ x: d > 0 ? -12 : W + 12, y: rand(-VOFF + 30, GROUND - 4), vx: d * rand(300, 420), life: 1.1, kind: 'streak', len: randi(8, 18), col: 'rgba(225,232,245,0.4)' });   // 돌풍 줄
+    if (this.bolt <= 0 && this.t < this.dur - 1) {
+      this.bolt = rand(1.2, 2.2); this.flash2 = 0.11; G.lightning = Math.max(G.lightning || 0, 0.16); Sound.sfx.thunder(); shake(0.2);
+      const pts = []; let bx = rand(30, W - 30); for (let y = -VOFF; y < GROUND - 64; y += randi(5, 9)) { bx += rand(-7, 7); pts.push([Math.round(bx), y]); }   // 하늘에서 먼 땅으로 내리꽂히는 갈래 번개
+      const br = []; for (let k = 0; k < 2; k++) { const s0 = pts[randi(2, Math.max(3, pts.length - 4))]; let x2 = s0[0], y2 = s0[1]; const sd = pick([-1, 1]), seg = [[x2, y2]]; for (let j = 0; j < randi(3, 5); j++) { x2 += sd * rand(3, 8); y2 += randi(4, 8); seg.push([Math.round(x2), y2]); } br.push(seg); }
+      G.boltFx = { pts, br, t: 0.22 };
+    }
+    if (this.flash2 > 0) { this.flash2 -= dt; if (this.flash2 <= 0) G.lightning = Math.max(G.lightning || 0, 0.07); }   // 번쩍 · 번쩍 두 번
+    if (this.next > 0 || this.t > this.dur - 1.5) return;
+    if (Math.random() < 0.55) spawnHz(Math.random() < 0.15 ? new Tewak(this.dir) : new Pebble(this.dir));
+    else spawnHz(new Rise(clamp(P.x + rand(-30, 30), 16, W - 16), Math.max(0.7, 0.9 - G.diff * 0.05) * G.speed, 0.6));
+    this.next = Math.max(0.45, 1.0 - G.diff * 0.1);
+  }
+  end() { G.dark = 0; G.windTarget = 0; G.storm = 0; G.boltFx = null; }
+}
+// 태풍 먹구름 띠: 화면 위를 덮고 바람 따라 흘러감 (아래 가장자리는 비 장막)
+let STORM_CLOUDS = null;
+function stormClouds() {
+  if (STORM_CLOUDS) return STORM_CLOUDS;
+  const c = mk(W * 2, 76), x = c.getContext('2d'), pal = ['#1a1d28', '#262a38', '#343a4c', '#454c60'].map(k => mute(k));
+  x.fillStyle = pal[1]; x.fillRect(0, 0, c.width, 24);
+  for (let i = -40, k = 0; i < c.width + 40; i += 46, k++) { const cs = cloudSprite(80 + (k % 3) * 22, 30 + (k % 2) * 8, 301 + k * 7, pal); x.drawImage(cs, i + 23, -6 + (k % 2) * 5); x.drawImage(cs, i, 14 + (k % 3) * 5); }
+  for (let i = 0; i < c.width; i += 3) { const len = 4 + Math.floor(hash2(i, 1, 311) * 10); x.fillStyle = 'rgba(40,46,62,0.35)'; x.fillRect(i, 56 + Math.floor(hash2(i, 2, 312) * 6), 1, len); }   // 비 장막
+  return (STORM_CLOUDS = c);
+}
+function drawStorm() {   // 배경 위 · 등장물 아래: 먹구름 · 어두운 색조 · 갈래 번개
+  const k = G.storm || 0; if (k <= 0) return;
+  g.fillStyle = `rgba(28,34,52,${0.44 * k})`; g.fillRect(-10, -VOFF - 10, W + 20, H + 20);
+  const sc = stormClouds(), off = (((amb.t * 26 * (G.stormDir || 1)) % W) + W) % W;
+  g.globalAlpha = k; g.drawImage(sc, -off, -VOFF - 4 - Math.round((1 - k) * 30)); g.drawImage(sc, W * 2 - off, -VOFF - 4 - Math.round((1 - k) * 30)); g.globalAlpha = 1;
+  const b = G.boltFx; if (b && b.t > 0 && Math.floor(b.t * 26) % 2 === 0) {
+    const seg = (pts, w, col) => { for (let i = 0; i < pts.length - 1; i++) pxLine(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], w, col); };
+    g.globalAlpha = 0.5; seg(b.pts, 3, '#a8b8ff'); g.globalAlpha = 1; seg(b.pts, 1, '#ffffff'); for (const br of b.br) seg(br, 1, '#dce4ff');
+    light(b.pts[b.pts.length - 1][0], b.pts[b.pts.length - 1][1], 40, '#c8d4ff', 0.9);
+  }
+}
