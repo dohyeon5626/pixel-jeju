@@ -33,11 +33,10 @@
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
   #main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  #stageBox { order: 1; flex: 1; min-height: 0; display: grid; place-items: center; padding: 8px; }
+  #stageBox { order: 1; flex: 1; min-height: 0; display: grid; place-items: center; padding: 0; overflow: hidden; }
   canvas#game {
     display: block; image-rendering: pixelated; image-rendering: crisp-edges; touch-action: none;
-    background: #000; border-radius: 4px;
-    box-shadow: 0 0 0 1px rgba(255,255,255,.07), 0 24px 70px rgba(0,0,0,.65);
+    background: #000; box-shadow: 0 0 40px rgba(0,0,0,.5);
   }
 
   /* 오른쪽 위 시스템 버튼 */
@@ -81,8 +80,7 @@
   /* 가로 모드 폰: 화면 위에 반투명하게 겹침 */
   @media (pointer: coarse) and (orientation: landscape) {
     #stageBox { padding: 0; }
-    /* 버튼은 화면 양옆 여백에 (게임 화면 · 땅 위 장애물을 가리지 않게) */
-    #stageBox { padding: 0 calc(126px + env(safe-area-inset-right)) 0 calc(126px + env(safe-area-inset-left)); }
+    /* 게임 화면은 꽉 채우고 버튼은 그 위 양옆에 겹침 — 버튼 아래는 놀이 범위에서 빠짐 (game.js의 EDGE) */
     .pad { position: absolute; inset: auto 0 0 0; padding: 0 calc(6px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) calc(6px + env(safe-area-inset-left)); pointer-events: none; }
     .pad-group { width: 116px; flex-wrap: wrap; justify-content: center; gap: 8px; }
     .pad button { pointer-events: auto; --b: 48px; background: rgba(24,18,36,.5); }
@@ -130,13 +128,13 @@
   </div>
 </div>
 
-<script src="js/art.js?v=268"></script>
-<script src="js/chars.js?v=268"></script>
-<script src="js/portraits.js?v=268"></script>
-<script src="js/boss.js?v=268"></script>
-<script src="js/scenery.js?v=268"></script>
-<script src="js/places.js?v=268"></script>
-<script src="js/audio.js?v=268"></script>
-<script src="js/game.js?v=268"></script>
+<script src="js/art.js?v=269"></script>
+<script src="js/chars.js?v=269"></script>
+<script src="js/portraits.js?v=269"></script>
+<script src="js/boss.js?v=269"></script>
+<script src="js/scenery.js?v=269"></script>
+<script src="js/places.js?v=269"></script>
+<script src="js/audio.js?v=269"></script>
+<script src="js/game.js?v=269"></script>
 </body>
 </html>

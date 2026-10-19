@@ -5,7 +5,7 @@
 // ─────────────────────────────────────────────────────────────
 'use strict';
 
-const cv = document.getElementById('game');
+const cv = document.getElementById('game'); cv.width = W;
 let g = cv.getContext('2d');
 const MAIN_G = g;
 const PIXEL2 = { bg: false, act: false };
@@ -279,7 +279,7 @@ const dexCount = () => Object.keys(PATTERNS).filter(k => SEEN[k]).length;
 
 function newWorld() {
   return {
-    t: 0, stage: 1, mode: 'intro', modeT: 0, diff: 0, arenaR: W - 8, arenaL: 8, up: {},
+    t: 0, stage: 1, mode: 'intro', modeT: 0, diff: 0, arenaR: W - 8 - EDGE, arenaL: 8 + EDGE, up: {},
     phase: 0, phaseTarget: 0, hp: 7, maxHp: 7, ammo: 15, score: 0, combo: 0, comboT: 0, bestCombo: 0,
     dodges: 0, stomps: 0, hitsTaken: 0, stageHits: 0,
     hz: [], spawnQ: [], shots: [], pickups: [], fx: [], bgfx: [], pops: [], ghosts: [], lights: [], warnings: [], decals: [],
@@ -872,8 +872,8 @@ class EventCut {
     }
     // 가장자리에 있을 때만 그쪽을 막음 (가운데로 뛰어나온 동안은 양쪽 다 열림)
     const atR = this.x > W - this.img.width - 12, atL = this.x < 8, on = (this.state === 'act' || this.state === 'enter') && !this.hop && !this.swap;
-    G.arenaR = on && atR ? Math.min(W - 8, this.x + 10) : W - 8;
-    G.arenaL = on && atL ? Math.max(8, this.x + this.img.width - 10) : 8;
+    G.arenaR = on && atR ? Math.min(W - 8 - EDGE, this.x + 10) : W - 8 - EDGE;
+    G.arenaL = on && atL ? Math.max(8 + EDGE, this.x + this.img.width - 10) : 8 + EDGE;
   }
   draw() {
     if (this.state === 'warn' || this.state === 'gone') return;
@@ -1616,7 +1616,7 @@ class PatEvent extends Pattern {
     for (let i = 0; i < n; i++) { const a = base + (i - (n - 1) / 2) * spread; spawnHz(new Zap(x0, my, x0 + Math.cos(a) * 100, my + Math.sin(a) * 100, spr, (125 + G.tier * 6) * evK())); }
     B.talk(0.3);
   }
-  end() { P.confuseT = 0; G.dark = 0; if (!P.dead) { daily('event'); if (G.hp < G.maxHp) { G.hp++; popup('+♥', P.x, P.y - 30, '#ff8fa0', 'b'); Sound.sfx.heal(); } } /* 보스를 넘기면 체력 1 회복 */ if (!P.dead) B = null; G.arenaR = W - 8; G.arenaL = 8; G.rapSub = null; G.windTarget = 0; G.rest = Math.max(G.rest, 1.1); if (this.music && !P.dead) playMusic({ style: 'chip', song: runSong(), tempo: 138 * G.speed }); }
+  end() { P.confuseT = 0; G.dark = 0; if (!P.dead) { daily('event'); if (G.hp < G.maxHp) { G.hp++; popup('+♥', P.x, P.y - 30, '#ff8fa0', 'b'); Sound.sfx.heal(); } } /* 보스를 넘기면 체력 1 회복 */ if (!P.dead) B = null; G.arenaR = W - 8 - EDGE; G.arenaL = 8 + EDGE; G.rapSub = null; G.windTarget = 0; G.rest = Math.max(G.rest, 1.1); if (this.music && !P.dead) playMusic({ style: 'chip', song: runSong(), tempo: 138 * G.speed }); }
 }
 // ── 이벤트: 할망 — 힙합 비트에 사투리 랩, 썩은 귤을 곧게 던짐 ──
 const RAP = [
@@ -2018,7 +2018,7 @@ class PatGlider extends Pattern {
 // 들어오는 쪽 화면 끝 꺾쇠 (dir: +1 = 왼쪽에서 들어옴)
 function edgeChev(dir, y, col = C.red[3]) { if (G && G.dark > 0 && !edgeChev.flush) { (G.edgeQ = G.edgeQ || []).push([dir, y, col]); return; }   // 태풍 어둠 위에 그리려고 나중으로
   const yy = Math.round(y);   // 두 겹 큰 꺾쇠 (멀리서도 보이게)
-  for (const off of [0, 6]) { const x = dir > 0 ? 3 + off : W - 4 - off; for (const [c, o] of [[INK, 1], [off ? mix(col, INK, 0.3) : col, 0]]) { g.fillStyle = c; for (let i = 0; i < 4; i++) g.fillRect(x + dir * i - o, yy - 3 + i - o, 2 + 2 * o, 7 - 2 * i + 2 * o); } }
+  for (const off of [0, 6]) { const x = dir > 0 ? 3 + EDGE + off : W - 4 - EDGE - off; for (const [c, o] of [[INK, 1], [off ? mix(col, INK, 0.3) : col, 0]]) { g.fillStyle = c; for (let i = 0; i < 4; i++) g.fillRect(x + dir * i - o, yy - 3 + i - o, 2 + 2 * o, 7 - 2 * i + 2 * o); } }
 }
 // ── 남방큰돌고래: 바다에서 솟아 포물선으로 넘어감 · 지나갈 길을 점선으로, 들어가고 나올 자리엔 물보라 고리 ──
 const DOLPHIN = [-0.6, 0, 0.6].map(ang => {
@@ -2928,7 +2928,7 @@ function updatePlayer(dt) {
   P.vy = P.pound ? P.vy : Math.min(P.vy + GRAV * gmul * dt, MAX_FALL);
   P.x += (P.vx + G.wind * (P.rollT > 0 ? 0.4 : 1)) * dt;
   P.y += P.vy * dt;
-  P.x = clamp(P.x, G.arenaL || 8, G.arenaR);
+  P.x = clamp(P.x, G.arenaL || 8 + EDGE, G.arenaR);
   // 부드러운 천장: 점수판 아래에서 멈춤
   if (P.y < -VOFF + 40) { P.y = -VOFF + 40; if (P.vy < 0) P.vy *= 0.3; }
   if (!P.onGround) P.peakY = Math.min(P.peakY ?? P.y, P.y);
@@ -3312,7 +3312,7 @@ function setupTitle() {
   Sound.setAccent(false);
   shareBtn.hidden = true;
   useTheme('field');
-  G = newWorld(); P = newPlayer(); P.x = 168; G.arenaR = W - 8;
+  G = newWorld(); P = newPlayer(); P.x = 168; G.arenaR = W - 8 - EDGE; G.arenaL = 8 + EDGE;
   B = null;
   state = 'title'; titleT = 0;
   clearInputs();
@@ -3835,7 +3835,8 @@ function drawHUDInner() {
     const max = P.rollCDMax || ROLL_CD, k = P.rollT > 0 ? 0 : 1 - clamp(P.rollCD / max, 0, 1);
     bar(6, 29, 40, 1, k, 0, C.teal[3], C.teal[4]);
   }
-  // 오른쪽 위: 점수 · 콤보
+  // 오른쪽 위: 점수 · 콤보 (화면 위에 겹친 소리 · 전체화면 단추만큼 왼쪽으로)
+  g.save(); g.translate(-HUD_R, 0);
   const sc = String(Math.floor(G.score)).padStart(7, '0');
   if (G.wx) { const ic = wxIcon(G.wx.id), py = 5 - (G.wxPulse > 0 && Math.floor(G.wxPulse * 10) % 2 ? 1 : 0); uiBox(W - 100, 3, 14, 14, DAILY.wxDone ? UI.gold : UI.warnHi); g.drawImage(ic, W - 97, py); }
   const tall = false;   // 점수판은 한 줄로 (위쪽을 덜 붐비게)
@@ -3850,6 +3851,7 @@ function drawHUDInner() {
     const k = clamp(G.comboT / 2.6, 0, 1);
     g.fillStyle = UI.gold; g.fillRect(Math.round(W - 5 - t.width * k), cy + t.height * s + 1, Math.round(t.width * k), 1);
   }
+  g.restore();
   const pauseIcon = () => { if (TOUCH.matches) { const px = Math.max(W / 2 + 80, (G.plateR || 0) + 9);   /* 가운데 판(지역 이름) 바로 오른쪽 빈자리 — 이름과 겹치지 않게 */ uiBox(px - 7, 3, 14, 14); g.fillStyle = UI.text; g.fillRect(px - 3, 7, 2, 6); g.fillRect(px + 1, 7, 2, 6); } };
   // 박자 표시: 한 마디 네 칸, 지금 박이 깜빡
   drawMetronome = () => { const bi = Math.floor(beatNow()) % 4; for (let i = 0; i < 4; i++) { const on = i === bi, x0 = W / 2 - 17 + i * 9; g.fillStyle = INK; g.fillRect(x0, 24, 8, 4); g.fillStyle = on ? (i === 0 ? C.yel[3] : C.teal[3]) : UI.hi; g.fillRect(x0 + 1, 25, 6, 2); if (on && G.beatPulse > 0.5) { g.fillStyle = '#fff4e0'; g.fillRect(x0 + 1, 25, 6, 1); } } }
@@ -4141,16 +4143,31 @@ function render() {
 //  화면 맞춤 · UI
 // ═════════════════════════════════════════════════════════════
 function fit() {
-  const box = document.getElementById('stageBox'), frame = TOUCH.matches ? 0 : 16;
+  const box = document.getElementById('stageBox'), frame = 0;
   const cs = getComputedStyle(box), padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight), padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
   const fixedH = cs.flexGrow === '0', mainH = document.getElementById('main').clientHeight - (document.querySelector('.pad').offsetHeight || 0) - 28;
   const bw = box.clientWidth - padX - frame, bh = (fixedH ? mainH : box.clientHeight) - padY - frame, dpr = window.devicePixelRatio || 1;
-  // 데스크톱 · 큰 화면: 기기 픽셀 정수배(또렷하게). 고밀도 폰에서 정수배가 너무 작아지면 꽉 채움 (픽셀이 2.5기기픽셀 이상이라 고르지 않음이 안 보임)
-  const fitS = Math.min(bw / W, bh / H), si = Math.max(1, Math.floor(fitS * dpr)) / dpr;
-  // 정수배가 화면을 12% 넘게 남기면(폰) 꽉 채움 — 고밀도 화면에선 칸 크기 차이가 안 보임
-  const s = fitS * dpr < 1 ? fitS : (si / fitS >= 0.88 || dpr < 2 ? si : fitS);
+  // 꽉 채움: 폭을 창 비율에 맞춰 뒀으니 남는 건 짝수 맞춤 오차뿐 → 그만큼은 넘치게 (안 보이게 잘림) · 비율이 크게 다르면(세로 화면 · 판 도중 창 변경) 맞춤
+  const fitS = Math.min(bw / W, bh / H), coverS = Math.max(bw / W, bh / H), s = coverS / fitS < 1.04 ? coverS : fitS;
   cv.style.width = W * s + 'px'; cv.style.height = H * s + 'px';
+  // 터치 가로: 화면 위에 겹친 양옆 버튼 묶음이 가리는 폭 (게임 칸 단위)
+  let edge = 0;
+  if (TOUCH.matches && innerWidth > innerHeight) {
+    const c = cv.getBoundingClientRect(), l = document.querySelector('.pad-l').getBoundingClientRect(), r = document.querySelector('.pad-r').getBoundingClientRect();
+    edge = Math.max(0, Math.ceil(Math.max(l.right - c.left, c.right - r.left) / s));
+  }
+  // 소리 · 전체화면 단추가 겹치는 오른쪽 위 폭 (점수판을 그만큼 비켜 그림)
+  const sb = document.querySelector('.sysbar').getBoundingClientRect(), cr = cv.getBoundingClientRect();
+  HUD_R = sb.width && sb.top < cr.top + 20 * s ? Math.max(0, Math.ceil((cr.right - sb.left) / s) + 1) : 0;
+  if (edge !== EDGE) { EDGE = edge; if (G && !B) { G.arenaL = 8 + EDGE; G.arenaR = W - 8 - EDGE; } }
+  // 처음 화면에서 창 비율이 바뀌면 폭을 다시 정하려고 새로 고침 (판 도중엔 그대로)
+  clearTimeout(fit.re); if (viewW() !== W && (state === 'title' || state === 'loading') && !(G && G.go)) fit.re = setTimeout(() => {
+    if (viewW() === W || state !== 'title') return;
+    let last = 0; try { last = +sessionStorage.getItem('jeju.refit') || 0; sessionStorage.setItem('jeju.refit', Date.now()); } catch (_) { /* 저장소 사용 불가 */ }
+    if (Date.now() - last > 5000) location.reload();   // 연달아 새로 고침되지 않게
+  }, 600);
 }
+let EDGE = 0, HUD_R = 0;
 window.addEventListener('resize', fit);
 window.addEventListener('orientationchange', () => { if (state === 'play' && P && !P.dead) setPause(true); setTimeout(fit, 200); });
 if (window.ResizeObserver) new ResizeObserver(fit).observe(document.getElementById('stageBox'));

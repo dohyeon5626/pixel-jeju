@@ -7,7 +7,15 @@
 'use strict';
 
 // 화면 426×240 (데스크톱에서 픽셀이 덜 커 보이게). 세계는 높이 180 좌표 그대로 VOFF만큼 내려 그림
-const W = 426, H = 240, VIEW_H = 180, VOFF = H - VIEW_H, GROUND = 156, WORLD_W = 470;
+const H = 240, VIEW_H = 180, VOFF = H - VIEW_H, GROUND = 156;
+// 화면 폭은 창 비율에 맞춰 꽉 차게 (세로 240 고정 · 넓은 창일수록 옆이 더 보임) — 처음 정한 뒤로는 안 바뀌고, 처음 화면에서 창 비율이 바뀌면 새로 고침
+function viewW() {
+  if (innerWidth < innerHeight) return 426;   // 세로 화면: 기본 폭
+  const a = document.getElementById('app'), cs = a && getComputedStyle(a), px = k => (cs && parseFloat(cs[k])) || 0;   // 노치 여백(safe-area)을 뺀 실제 자리
+  const w = innerWidth - px('paddingLeft') - px('paddingRight'), h = innerHeight - px('paddingTop') - px('paddingBottom');
+  return Math.max(426, Math.min(576, Math.round(H * w / Math.max(1, h) / 2) * 2));
+}
+const W = viewW(), WORLD_W = W + 44;
 
 // ── 팔레트 ───────────────────────────────────────────────────
 const C = {
