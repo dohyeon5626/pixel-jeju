@@ -2825,3 +2825,322 @@ function finishPattern(p) {
   }
 }
 
+// ═════════════════════════════════════════════════════════════
+//  주인공
+// ═════════════════════════════════════════════════════════════
+function playerBox() { return P.rollT > 0 || P.flipT > 0 || P.pound ? { x: P.x - 6, y: P.y - 13, w: 12, h: 12 } : { x: P.x - 4, y: P.y - 24, w: 8, h: 23 }; }
+
+function updatePlayer(dt) {
+  P.prevY = P.y;
+  if (P.dead) { P.vy += GRAV * dt; P.x += P.vx * dt; P.y += P.vy * dt; P.spin += dt * 14; return; }
+  const ctrl = !G.cut && !G.choice;
+  P.inv = Math.max(0, P.inv - dt); P.hurtT = Math.max(0, P.hurtT - dt); P.rollCD -= dt; P.throwCD -= dt; P.throwT -= dt; P.flipT -= dt; P.landT -= dt; P.skidT -= dt;
+  P.blinkT -= dt; if (P.blinkT < -0.12) P.blinkT = rand(1.5, 4);
+  P.confuseT = Math.max(0, (P.confuseT || 0) - dt);
+  const dir = (ctrl ? (held.right ? 1 : 0) - (held.left ? 1 : 0) : 0) * (P.confuseT > 0 ? -1 : 1);   // 사투리 혼란: 좌우 반전
+  if (pressed.jump) { P.buffer = BUFFER; pressed.jump = false; } else P.buffer -= dt;
+  if (pressed.roll) { P.rollBuf = BUFFER; pressed.roll = false; } else P.rollBuf = (P.rollBuf || 0) - dt;
+  // ↓/S: 공중이면 내려찍기, 땅이면 구르기
+  if (pressed.down) { pressed.down = false; if (!P.onGround && GROUND - P.y > 20) P.poundBuf = BUFFER; else P.rollBuf = BUFFER; } else P.poundBuf = (P.poundBuf || 0) - dt;
+  if (pressed.throw) { P.throwBuf = BUFFER; pressed.throw = false; } else P.throwBuf = (P.throwBuf || 0) - dt;
+  if (held.throw && ctrl) P.throwBuf = Math.max(P.throwBuf, 0.02);
+  if (!ctrl) { P.buffer = 0; P.rollBuf = 0; P.throwBuf = 0; }
+  P.coyote = P.onGround ? COYOTE : P.coyote - dt;
+
+  if (P.flipT > 0) { P.ghostT -= dt; if (P.ghostT <= 0) { G.ghosts.push({ img: curFrame(), x: P.x, y: P.y, life: 0.18, col: P.airJumps === 0 && P.flipMax - P.flipT < 0.12 ? C.yel[3] : C.cloth[2] }); P.ghostT = 0.05; } }
+  if (P.hurtT > 0) P.vx = approach(P.vx, 0, 200 * dt);
+  else if (P.rollT > 0) {
+    P.rollT -= dt;
+    P.vx = P.face * ROLL_V * (0.5 + 0.5 * (P.rollT / ROLL_T));
+    P.ghostT -= dt; if (P.ghostT <= 0) { G.ghosts.push({ img: curFrame(), x: P.x, y: P.y, life: 0.22, col: C.org[3] }); P.ghostT = 0.035; }
+    P.dustT -= dt; if (P.onGround && P.dustT <= 0) { dust(P.x - P.face * 5, GROUND, 1, -P.face); P.dustT = 0.04; }
+    if (P.rollT <= 0) endRoll(ROLL_CD);
+  } else {
+    const ac = P.onGround ? ACCEL : AIR_ACCEL, fr = P.onGround ? FRICTION : AIR_FRICTION;
+    if (dir) {
+      if (P.onGround && Math.sign(P.vx) === -dir && Math.abs(P.vx) > 50) { P.skidT = 0.12; if (Math.random() < 0.5) dust(P.x + dir * 4, GROUND, 1, dir); }
+      P.vx = approach(P.vx, dir * SPEED * (1 + 0.08 * (G.up.speed || 0)), ac * dt); P.face = dir;
+    } else P.vx = approach(P.vx, 0, fr * dt);
+  }
+
+  if (P.poundBuf > 0 && P.hurtT <= 0 && !P.pound && !P.onGround) {
+    // 내려찍기: 곧장 내리꽂혀 착지 충격파로 주변 하르방 · 썩은 귤을 부숨
+    P.poundBuf = 0; P.pound = true; P.flipT = 0; P.rollT = 0; P.vx = 0; P.vy = 0; P.poundT = 0.08;
+    Sound.sfx.whoosh(); P.sx = 0.8; P.sy = 1.25; fx({ x: P.x, y: P.y - 12, kind: 'flare', size: 7, life: 0.15, col: C.yel[3] });
+  }
+  if (P.rollBuf > 0) {
+    if (TOUCH.matches && P.hurtT <= 0 && !P.pound && !P.onGround && GROUND - P.y > 44) {   // 터치: 높이 떠서 구르기 = 내려찍기
+      // 공중에서 구르기 = 내려찍기: 곧장 내리꽂혀 착지 충격파로 주변 하르방 · 썩은 귤을 부숨
+      P.rollBuf = 0; P.pound = true; P.flipT = 0; P.rollT = 0; P.vx = 0; P.vy = 0; P.poundT = 0.08;
+      Sound.sfx.whoosh(); P.sx = 0.8; P.sy = 1.25; fx({ x: P.x, y: P.y - 12, kind: 'flare', size: 7, life: 0.15, col: C.yel[3] });
+    } else if (P.hurtT <= 0 && P.rollT <= 0 && P.rollCD <= 0 && !P.pound) {
+      P.rollBuf = 0;
+      if (dir) P.face = dir;
+      P.rollT = ROLL_T; P.flipT = 0;
+      if (onBeatAct(P.x, P.y - 8, false)) { G.slow = Math.max(G.slow, 0.08); for (let k = 1; k <= 3; k++) G.ghosts.push({ img: curFrame(), x: P.x - P.face * k * 5, y: P.y, life: 0.2, col: C.teal[3] }); }   // 박자 구르기
+      if (!P.onGround) P.vy = Math.min(P.vy, 0) * 0.3;
+      Sound.sfx.roll(); dust(P.x, GROUND, 4, -P.face);
+      P.sx = 1.25; P.sy = 0.8;
+    }
+  }
+  if (P.buffer > 0 && P.hurtT <= 0) {
+    if (P.coyote > 0) {
+      P.vy = -JUMP_V; P.onGround = false; P.coyote = 0; P.buffer = 0; P.jumpCut = false;
+      if (P.rollT > 0) { endRoll(ROLL_CD * 0.4); P.vx = P.face * SPEED * 1.25; }
+      P.sx = 0.75; P.sy = 1.3; Sound.sfx.jump(); dust(P.x - 3, GROUND, 3, -1); dust(P.x + 3, GROUND, 3, 1); onBeatAct(P.x, GROUND - 4, false);
+      fx({ x: P.x, y: GROUND - 1, kind: 'ring', life: 0.22, col: C.cloth[2] });
+      for (const s of [-1, 1]) fx({ x: P.x + s * 5, y: GROUND - 3, vx: s * 10, vy: -70, life: 0.14, kind: 'trail', col: C.cloth[2] });
+    } else if (P.airJumps > 0) {
+      P.airJumps--;
+      const third = P.airJumps === 0;
+      P.vy = third ? -DJUMP_V * 0.92 : -DJUMP_V; P.buffer = 0; P.jumpCut = false; P.flipT = third ? 0.42 : 0.32; P.flipMax = P.flipT;
+      if (P.rollT > 0) endRoll(ROLL_CD * 0.6);
+      P.sx = 0.8; P.sy = 1.25; Sound.sfx.djump();
+      fx({ x: P.x, y: P.y - 2, kind: 'ring', life: 0.25, col: third ? C.yel[3] : C.cloth[3] });
+      fx({ x: P.x, y: P.y - 4, kind: 'flare', size: third ? 9 : 5, life: 0.18, col: third ? C.yel[3] : C.cloth[3] });
+      for (let i = -2; i <= 2; i++) fx({ x: P.x + i * 2, y: P.y, vx: i * 25, vy: 90, life: 0.2, kind: 'trail', col: third ? C.yel[2] : C.cloth[2] });
+      if (third) { Sound.sfx.dodge(); light(P.x, P.y - 10, 26, C.yel[3], 0.8); for (let i = 0; i < 8; i++) fx({ x: P.x + rand(-8, 8), y: P.y - rand(0, 16), vx: rand(-30, 30), vy: rand(-40, 10), life: 0.4, kind: 'spark' }); }
+      for (let i = 0; i < 6; i++) fx({ x: P.x + rand(-6, 6), y: P.y, vx: rand(-40, 40), vy: rand(20, 60), life: 0.3, kind: 'puff', size: 1 });
+    }
+  }
+  if (!held.jump && P.vy < 0 && !P.jumpCut) { P.vy *= JUMP_CUT; P.jumpCut = true; }
+
+  if (P.throwBuf > 0) {
+    if (P.throwCD <= 0 && P.hurtT <= 0 && P.rollT <= 0) {
+      P.throwBuf = 0;
+      if (G.ammo > 0) {
+        G.ammo--; P.throwCD = THROW_CD; P.throwT = 0.2;
+        G.shots.push(new Shot(P.x + P.face * 7, P.y - 18, P.face));
+        Sound.sfx.throw(); P.sx = 1.12; P.sy = 0.92;
+        fx({ x: P.x + P.face * 9, y: P.y - 18, kind: 'flare', size: 4, life: 0.1, col: C.org[3] }); fx({ x: P.x + P.face * 8, y: P.y - 18, vx: P.face * 20, vy: -10, life: 0.2, kind: 'puff', size: 0 });
+      } else { Sound.sfx.empty(); popup('귤 없음', P.x, P.y - 34, C.org[3]); P.throwCD = 0.4; }
+    }
+  }
+
+  P.poundSafe = Math.max(0, (P.poundSafe || 0) - dt);
+  if (P.pound) {
+    P.vx = 0; P.poundT -= dt;
+    if (P.poundT > 0) P.vy = 0; else P.vy = 620;
+    P.ghostT2 = (P.ghostT2 || 0) - dt; if (P.ghostT2 <= 0 && P.poundT <= 0) { P.ghostT2 = 0.03; G.ghosts.push({ img: curFrame(), x: P.x, y: P.y, life: 0.16, col: C.yel[3] }); }
+  }
+  let gmul = 1;
+  if (Math.abs(P.vy) < 50 && held.jump && !P.onGround) gmul = 0.55;
+  else if (P.vy > 0) gmul = 1.25;
+  P.vy = P.pound ? P.vy : Math.min(P.vy + GRAV * gmul * dt, MAX_FALL);
+  P.x += (P.vx + G.wind * (P.rollT > 0 ? 0.4 : 1)) * dt;
+  P.y += P.vy * dt;
+  P.x = clamp(P.x, G.arenaL || 8, G.arenaR);
+  // 부드러운 천장: 점수판 아래에서 멈춤
+  if (P.y < -VOFF + 40) { P.y = -VOFF + 40; if (P.vy < 0) P.vy *= 0.3; }
+  if (!P.onGround) P.peakY = Math.min(P.peakY ?? P.y, P.y);
+
+  if (P.y >= GROUND) {
+    if (!P.onGround && P.pound) poundLand();
+    if (!P.onGround) {
+      const hard = P.vy > 220;
+      dust(P.x - 4, GROUND, hard ? 4 : 2, -1); dust(P.x + 4, GROUND, hard ? 4 : 2, 1);
+      if (P.vy > 150) Sound.sfx.land();
+      P.flipT = 0; P.landT = hard ? 0.1 : 0.05;
+      const fall = GROUND - (P.peakY ?? GROUND); P.peakY = undefined;
+      if (fall > 150) { light(P.x, GROUND - 4, 22, C.yel[3], 0.6); fx({ x: P.x, y: GROUND - 1, kind: 'ring', life: 0.3, col: C.yel[3] }); }
+      if (fall > 110) { fx({ x: P.x, y: GROUND - 1, kind: 'ring', big: true, life: 0.25, col: C.cloth[2] }); shake(0.08); for (let i = 0; i < 6; i++) fx({ x: P.x, y: GROUND - 1, vx: rand(-90, 90), vy: rand(-60, -20), grav: 300, life: rand(0.25, 0.4), kind: 'chunk', size: 1, col: C.soil[3] }); }
+    }
+    P.y = GROUND; P.vy = 0; P.onGround = true; P.airJumps = AIR_JUMPS;
+  } else P.onGround = false;
+
+  if (P.onGround && Math.abs(P.vx) > 10 && P.rollT <= 0) {
+    P.anim += dt * (Math.abs(P.vx) / SPEED) * 15;
+    P.dustT -= dt; if (P.dustT <= 0) { dust(P.x - P.face * 5, GROUND, 1, -P.face); P.dustT = 0.16; }
+  } else if (P.rollT <= 0) P.anim = 0;
+
+  P.sx = approach(P.sx, 1, dt * 5); P.sy = approach(P.sy, 1, dt * 5);
+  updateScarf();
+}
+
+function clearInputs() {
+  for (const k of GAME_KEYS) pressed[k] = false;
+  pressed.left = pressed.right = pressed.start = false;
+  if (P) { P.buffer = 0; P.rollBuf = 0; P.throwBuf = 0; P.poundBuf = 0; }
+}
+function rollInv() { return P.rollT > ROLL_T - 0.24 || (P.pound && P.poundT <= 0) || (P.poundSafe || 0) > 0; }
+// 내려찍기 착지: 충격파 · 화면 울림 · 근처의 밟을 수 있는 것들을 한꺼번에 부숨
+function poundLand() {
+  P.pound = false; P.poundSafe = 0.12; P.rollCD = ROLL_CD; P.landT = 0.16; P.sx = 1.35; P.sy = 0.7;
+  Sound.sfx.boom(); Sound.duck(0.3); shake(0.2); kick(0, 3); hitstop(0.065);
+  fx({ x: P.x, y: GROUND - 1, kind: 'ring', big: true, life: 0.35, col: C.yel[3] }); fx({ x: P.x, y: GROUND - 1, kind: 'ring', life: 0.25, col: '#fff4e0' });
+  dust(P.x - 6, GROUND, 5, -1, 2); dust(P.x + 6, GROUND, 5, 1, 2); light(P.x, GROUND - 6, 34, C.yel[3], 0.9);
+  for (const sd of [-1, 1]) for (let i = 0; i < 4; i++) fx({ x: P.x + sd * (6 + i * 6), y: GROUND - 2, vx: sd * rand(30, 70), vy: -rand(60, 140), grav: 420, life: rand(0.3, 0.5), kind: 'chunk', size: randi(1, 2), col: pick([C.soil[3], C.stone[3]]) });
+  onBeatAct(P.x, GROUND - 4);
+  let n = 0;
+  for (const h of G.hz) { if (h.dead || !h.stompable || !h.kill) continue; const bs = h.boxes(); if (bs.some(b => Math.abs(b.x + b.w / 2 - P.x) < 46 + 16 * (G.up.pound || 0) && b.y + b.h > GROUND - 30)) { h.kill('stomp'); n++; G.stomps++; daily('stomp'); } }
+  if (n > 1) addScore(80 * n, P.x, P.y - 44);   // 여럿을 한 번에: 충격파 보너스 (처치마다 보상 · 콤보는 처치 쪽에서)
+}
+function endRoll(cd) { P.rollT = 0; P.rollCD = cd; P.rollCDMax = cd; }
+
+function curFrame() {
+  const side = P.face > 0 ? 'r' : 'l';
+  let f;
+  if (P.dead || P.hurtT > 0) f = GYUL.hurt;
+  else if (P.pound) f = GYUL.roll[Math.floor(amb.t * 40) % 8];
+  else if (P.rollT > 0) f = GYUL.roll[Math.floor((1 - P.rollT / ROLL_T) * 10) % 8];
+  else if (P.flipT > 0) f = GYUL.roll[Math.floor((1 - P.flipT / (P.flipMax || 0.32)) * (P.flipMax > 0.4 ? 16 : 8)) % 8];
+  else if (P.throwT > 0) f = P.onGround && Math.abs(P.vx) > 10 ? GYUL.throwRun[P.throwT > 0.14 ? 0 : 1][Math.floor(P.anim) % 8] : GYUL.throw[P.throwT > 0.14 ? 0 : 1];
+  else if (!P.onGround) f = P.vy < -60 ? GYUL.up : P.vy < 60 ? GYUL.apex : GYUL.fall;
+  else if (P.landT > 0) f = GYUL.land;
+  else if (P.skidT > 0) f = GYUL.skid;
+  else if (Math.abs(P.vx) > 10) f = GYUL.run[Math.floor(P.anim) % 8];
+  else f = P.blinkT < 0 ? GYUL.blink : GYUL.idle[Math.floor(amb.t * 3) % 4];
+  return f[side];
+}
+
+// 목도리: 짧은 사슬 물리 (머리카락처럼 뒤로 휘날림)
+function updateScarf() {
+  const f = curFrame(), neck = f.neck || [0, -20];
+  const ball = P.rollT > 0 || P.flipT > 0;
+  // 등의 테왁: 스프링으로 한 박자 늦게 출렁
+  const tw = P.tw || (P.tw = { x: P.x, y: P.y - 18, vx: 0, vy: 0 });
+  const tx = P.x + (ball ? 0 : neck[0] - P.face * 4), ty = P.y + (ball ? -14 : neck[1] + 6);
+  tw.vx += ((tx - tw.x) * 260 - tw.vx * 18) * STEP * 2; tw.vy += ((ty - tw.y) * 260 - tw.vy * 18) * STEP * 2;
+  tw.x += tw.vx * STEP * 2; tw.y += tw.vy * STEP * 2;
+  const ax = ball ? P.x : tw.x, ay = ball ? P.y - 14 : tw.y + 6;
+  const pts = P.scarf;
+  pts[0].x = ax; pts[0].y = ay; pts[0].px = ax; pts[0].py = ay;
+  for (let i = 1; i < pts.length; i++) {
+    const p = pts[i], vx = (p.x - p.px) * 0.86, vy = (p.y - p.py) * 0.86;
+    p.px = p.x; p.py = p.y;
+    p.x += vx - P.face * 0.18 + G.wind * 0.004 - P.vx * 0.0015; p.y += vy + 0.22;
+  }
+  for (let it = 0; it < 3; it++) for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1, L = 2.4;
+    b.x = a.x + dx / d * L; b.y = a.y + dy / d * L;
+    if (b.y > GROUND - 1) b.y = GROUND - 1;
+  }
+}
+// 진주로 여는 스카프 색 (진주는 쓰지 않고 모은 개수로 열림)
+const SCARVES = [{ n: '바다', c: '#3aa88a', cost: 0 }, { n: '감귤', c: '#e08a3a', cost: 3 }, { n: '유채', c: '#d8c04a', cost: 6 }, { n: '동백', c: '#c04a4a', cost: 10 }, { n: '현무암', c: '#6a6a72', cost: 15 }];
+const _scarfCols = {};
+function scarfCols() { const i = clamp(DAILY.scarf | 0, 0, SCARVES.length - 1); if (_scarfCols[i]) return _scarfCols[i]; const b = mute(SCARVES[i].c); return (_scarfCols[i] = [b, mix(b, INK, 0.15), b, mix(b, INK, 0.25), mix(b, INK, 0.15), mix(b, INK, 0.35), mix(b, INK, 0.45)]); }
+function cycleScarf(d) {
+  ensureDaily(); const n = SCARVES.length; let i = DAILY.scarf | 0;
+  for (let k = 0; k < n; k++) { i = (i + d + n) % n; if ((DAILY.pearl || 0) >= SCARVES[i].cost) break; }
+  if (i === (DAILY.scarf | 0)) { Sound.sfx.tink(); return; }
+  DAILY.scarf = i; saveDaily(); Sound.sfx.select();
+}
+function drawScarf() {
+  const pts = P.scarf, cols = scarfCols();
+  for (const pass of [0, 1]) for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1], s = i < 4 ? 2 : 1;
+    for (let k = 0; k <= 2; k++) {
+      const x = Math.round(lerp(a.x, b.x, k / 2)), y = Math.round(lerp(a.y, b.y, k / 2));
+      if (pass === 0) { g.fillStyle = mix(cols[i], INK, 0.7); g.fillRect(x - 1, y - 1, s + 2, s + 2); }
+      else { g.fillStyle = cols[i]; g.fillRect(x, y, s, s); }
+    }
+  }
+}
+
+function hurt(src) {
+  if (godMode) { if (src && src.pat) src.pat.hit = true; G.combo = 0; G.wowStreak = 0; P.inv = 0.6; flashFx(0.015, '#fff4e0'); Sound.sfx.tink(); return; }
+  // 테왁 방패: 한 번은 막아 줌 (피격으로는 쳐서 WOW는 끊김)
+  if (P.shield) {
+    P.shield = 0; P.inv = 1.0; G.combo = 0; G.wowStreak = 0;
+    if (src && src.pat) src.pat.hit = true;
+    fx({ x: P.x, y: P.y - 12, kind: 'ring', big: true, life: 0.35, col: C.org[3] }); fx({ x: P.x, y: P.y - 14, kind: 'flare', size: 10, life: 0.2, col: C.yel[3] }); burst(P.x, P.y - 12, 12, [C.org[1], C.org[2], C.org[3]], 110, 0.6, 360, 'chunk'); light(P.x, P.y - 12, 30, C.org[3], 0.9); popup('방어', P.x, P.y - 34, C.org[3], 'b'); Sound.sfx.block(); shake(0.25); hitstop(0.04);
+    return;
+  }
+  G.hp--; G.hitsTaken++; if (G.hp === 1 && !G.practice) setTimeout(() => Sound.sfx.lowhp(), 380);   // 체력 1: 경고음
+  if (src && src.pat) src.pat.hit = true; else for (const pt of [...G.patterns, ...G.ended]) pt.hit = true; G.stageHits++; G.combo = G.up.combo ? Math.floor(G.combo / 2) : 0; G.wowStreak = 0; G.beatCombo = 0;
+  P.inv = 1.8; P.hurtT = 0.38; P.rollT = 0; P.flipT = 0; P.pound = false;
+  P.vx = -P.face * 90; P.vy = -180; P.onGround = false;
+  hitstop(0.06); flashFx(0.03, '#ffd8c8', true); shake(0.3); kick(-P.face * 3, -1); Sound.duck(0.35);
+  Sound.sfx.hurt();
+  burst(P.x, P.y - 12, 14, [C.red[2], C.red[3], C.org[3]], 90, 0.5);
+  if (G.practice && G.hp <= 0) { G.hp = G.maxHp; G.pracFails = (G.pracFails || 0) + 1; banner('연습', `실패 ${G.pracFails}회 · 체력 회복`, UI.sub); }
+  if (G.hp <= 0) { G.killer = src && src.pat ? (themeCfg().indoor && src.pat.kind === 'crow' ? '박쥐 떼' : themeCfg().indoor && src.pat.kind === 'meteor' ? '천장 낙석' : DEX_NAME[src.pat.kind] || '') : src === 'trap' ? '함정 한라봉' : ''; die(); }   // 동굴에선 동굴 이름으로
+}
+function die() {
+  G.choice = null;
+  P.dead = true;
+  G.news = null; G.interp = null;
+  for (const pt of G.patterns) pt.end(); G.patterns = [];
+  G.dark = 0; G.storm = 0; G.boltFx = null; G.windTarget = 0; G.cut = null; G.cutin = null; G.card = null; G.rapSub = null; G.answers = null; G.skill = null; P.confuseT = 0;
+  if (B) { B.say = null; B.leave(); }
+  G.hz = []; G.spawnQ = []; G.warnings = []; G.pendingPat = null; if (G.volcano) G.volcano.erupt = 0;
+  P.dead = true; P.vy = -260; P.vx = -P.face * 50;
+  impact(P.x, P.y - 12, C.red[3], 0.8, true); burst(P.x, P.y - 12, 16, [C.org[2], C.org[3], C.red[2], C.wood[2]], 120, 0.7, 380, 'chunk'); flashFx(0.05, '#ffd8c8', true); light(P.x, P.y - 12, 44, C.red[3], 1);
+  hitstop(0.3); G.slow = 1.3; G.overT = 1.9; shake(0.8);
+  Sound.stopMusic();
+}
+function dodge() {
+  onBeatAct(P.x, P.y - 14);
+  G.dodges++; Sound.sfx.dodge(); reward('dodge', P.x, P.y - 28);
+  for (let i = 0; i < 5; i++) fx({ x: P.x + rand(-6, 6), y: P.y - rand(2, 14), vy: -30, life: 0.3, kind: 'spark' });
+}
+
+function checkHits() {
+  if (P.dead || G.iris) return;
+  const pb = playerBox(), feetPrev = P.prevY ?? P.y;
+  for (const h of G.hz) {
+    if (h.dead) continue;
+    for (const b of h.boxes()) {
+      if (!overlap(pb, b)) continue;
+      if ((h.stompable || h.bouncy) && P.vy > 40 && feetPrev <= b.y + 6 && P.rollT <= 0) {
+        P.vy = -270; P.y = Math.min(P.y, b.y); P.inv = Math.max(P.inv, 0.15); P.airJumps = AIR_JUMPS; P.jumpCut = true; P.sx = 0.8; P.sy = 1.25; P.flipT = 0; P.pound = false;
+        Sound.sfx.stomp(); spark(P.x, b.y); hitstop(0.035); kick(0, 2); onBeatAct(P.x, b.y); fx({ x: P.x, y: b.y, kind: 'ring', life: 0.22, col: '#fff4e0' }); fx({ x: P.x, y: b.y, kind: 'flare', size: 7, life: 0.16, col: C.yel[3] }); dust(P.x, b.y, 3);
+        if (h.stompable && h.kill) { h.kill('stomp'); daily('stomp'); }
+        else { if (!h.onBounce || h.onBounce()) { addScore(80, P.x, b.y - 10); comboUp(P.x, b.y - 10); }  }
+        G.stomps++;
+        break;
+      }
+      if (h.safe) break;
+      if (!h.solid && (rollInv() || (P.airJumps === 0 && P.flipMax - P.flipT < 0.12))) { if (!h.dodged) { h.dodged = true; dodge(); } }
+      else if (P.inv <= 0) { hurt(h); if (P.dead) return; }
+      break;
+    }
+  }
+  for (const h of G.hz) {
+    if (h.dead || h.nearDone || h.safe || h.solid || h instanceof Rise || h instanceof Meteor) continue;
+    const nb = { x: pb.x - 6, y: pb.y - 6, w: pb.w + 12, h: pb.h + 9 };
+    const bs = h.boxes();
+    if (bs.some(b => overlap(pb, b))) { h.nearTouched = true; continue; }
+    const inNear = bs.some(b => overlap(nb, b));
+    if (inNear) h.nearArm = true;
+    else if (h.nearArm) {
+      h.nearDone = true;
+      if (!h.nearTouched && P.inv <= 0 && (G.nearCD || 0) < amb.t) { G.nearCD = amb.t + 0.4; fx({ x: P.x, y: P.y - 14, kind: 'flare', size: 6, life: 0.15, col: C.teal[4] }); for (let i = 0; i < 2; i++) fx({ x: P.x - P.face * 3, y: P.y - rand(4, 22), vx: -P.face * 40, life: 0.12, kind: 'trail', col: C.teal[4] }); G.score += 50 * ((G.omegiT || 0) > 0 ? 2 : 1); G.nears = (G.nears || 0) + 1; popup('아슬!', P.x, P.y - 32, C.teal[4], 's'); daily('near'); if (amb.t > (G.nearSlowAt || 0) && !G.hz.some(h => h.chain)) { G.slow = Math.max(G.slow || 0, 0.09); G.nearSlowAt = amb.t + 2; } Sound.sfx.dodge(); }
+    }
+  }
+  for (const s of G.shots) {
+    if (s.dead) continue;
+    const sb = s.box();
+    for (const h of G.hz) {
+      if (h.dead || !h.onShot) continue;
+      if (h.boxes().some(b => overlap(sb, b))) { fx({ x: s.x, y: s.y, kind: 'flare', size: 5, life: 0.12, col: C.org[3] }); if (h.onShot(s)) { s.dead = true; juice(s.x, s.y, 5); if (h.dead) hitstop(0.015); } break; }
+    }
+  }
+  for (const s of G.shots) {   // 던진 귤로 아이템 · 귤을 맞히면 그 자리에서 먹음
+    if (s.dead) continue;
+    const sb = s.box(), p = G.pickups.find(q => !q.dead && overlap(sb, q.box()));
+    if (!p) continue;
+    if (p.kind !== 'tang') s.dead = true;   /* 그냥 귤은 줍고 계속 날아감 (싸우는 중에 귤이 가로막지 않게) */ fx({ x: p.x, y: p.y - 8, kind: 'flare', size: 7, life: 0.15, col: '#fff4e0' }); for (let i = 0; i < 5; i++) fx({ x: p.x, y: p.y - 8, vx: (P.x - p.x) * rand(1.5, 2.5), vy: (P.y - 14 - p.y) * rand(1.5, 2.5) - 40, life: 0.35, kind: 'px', col: C.yel[3] });   // 먹은 빛이 숨비 쪽으로 튐
+    if (collectPickup(p, true) === 'dead') return;
+  }
+  for (const p of G.pickups) {
+    if (p.dead || !overlap(pb, p.box())) continue;
+    if (collectPickup(p) === 'dead') return;
+  }
+}
+// 줍기: 몸으로 닿거나, 던진 귤로 맞혀도 똑같이 먹음 (함정은 귤로 맞히면 다치지 않고 터짐)
+function collectPickup(p, byShot) {
+  p.dead = true;
+  if (p.kind === 'fake') { burst(p.x, p.y - 6, 14, ['#5e6e34', '#8a9a48'], 90, 0.5, 300); Sound.sfx.splat(); if (byShot) { popup('펑!', p.x, p.y - 20, C.teal[3], 'b'); return; } popup('함정', p.x, p.y - 20, C.red[3], 'b'); if (P.inv <= 0) { hurt('trap'); if (P.dead) return 'dead'; } return; }   // 던진 귤로 맞히면 다치지 않고 터뜨림
+  if (p.kind === 'bong') { G.hp = Math.min(G.maxHp, G.hp + 1); Sound.sfx.heal(); popup('+♥', p.x, p.y - 16, '#ff8fa0', 'b'); }
+  else if (p.kind === 'water') { G.water = (G.water || 0) + 1; G.waterSeen = true; G.waterPulse = 0.4; Sound.sfx.pickup(); splashFx(p.x, 0.6); popup(G.water >= 3 ? '삼다수 충전' : `삼다수 ${G.water}/3`, p.x, p.y - 22, mute('#8ac4e4'), 's'); if (G.water >= 3) samdaWave(); return; }
+  else if (p.kind === 'basket') { giveAmmo(5); G.ammoPulse = 0.4; Sound.sfx.bag(); popup('귤 망사리 · 귤 +5', p.x, p.y - 16, C.org[3], 'b'); burst(p.x, p.y - 4, 12, [C.org[2], C.org[3], C.yel[3]], 90, 0.5, 300); return; }
+  else if (p.kind === 'omegi') { G.omegiT = 6; Sound.sfx.level(); popup('오메기떡 · 6초 점수 ×2', p.x, p.y - 16, C.yel[2], 'b'); fx({ x: p.x, y: p.y - 6, kind: 'ring', big: true, life: 0.35, col: C.yel[3] }); return; }
+  else if (p.kind === 'pinwheel') { G.magnetT = 8; Sound.sfx.gust(); popup('바람개비 · 8초 귤 끌어당김', p.x, p.y - 16, C.teal[3], 'b'); for (let i = 0; i < 10; i++) fx({ x: p.x, y: p.y - 6, vx: rand(-120, 120), vy: rand(-60, 20), life: 0.4, kind: 'streak', len: randi(4, 8), col: 'rgba(255,244,224,0.5)' }); return; }
+  else if (p.kind === 'shield') { P.shield = 1; Sound.sfx.equip(); popup('방패', p.x, p.y - 16, C.org[3], 'b'); }
+  else { giveAmmo(1); G.score += 10 * ((G.omegiT || 0) > 0 ? 2 : 1); daily('tang');
+    if (p.arc) { G.arcGot = G.arcGot || {}; G.arcGot[p.arc] = (G.arcGot[p.arc] || 0) + 1; if (G.arcGot[p.arc] === 5) { addScore(150, p.x, p.y - 34); fx({ x: p.x, y: p.y - 6, kind: 'ring', big: true, life: 0.4, col: C.yel[3] }); popup('아치 완성', p.x, p.y - 26, C.yel[2], 'b', true); for (let i = 0; i < 8; i++) fx({ x: p.x, y: p.y - 6, vx: rand(-70, 70), vy: rand(-120, -40), grav: 260, life: rand(0.4, 0.7), kind: 'ember' }); light(p.x, p.y - 6, 30, C.yel[3], 0.8); Sound.sfx.level(); } else popup(G.arcGot[p.arc] + '/5', p.x, p.y - 22, C.yel[3]); } fx({ x: p.x, y: p.y - 4, kind: 'ring', life: 0.25, col: C.org[3] }); fx({ x: p.x, y: p.y - 4, kind: 'flare', size: 5, life: 0.15, col: '#fff4e0' }); G.ammoPulse = 0.25; Sound.sfx.pickup(); if (!p.arc) popup('+1', p.x, p.y - 14, C.org[3]); }
+  burst(p.x, p.y - 4, 8, [C.org[3], C.org[2], C.yel[3]], 50, 0.4, 100);
+}
+
