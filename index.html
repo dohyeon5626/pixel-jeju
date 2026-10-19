@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>제주 — JEJU</title>
+<meta name="description" content="새내기 해녀 숨비가 쏟아지는 제주 밈을 피하는 픽셀 밈 피하기 게임. 돌하르방, 똥돼지, 렌터카, 사투리 할머니 랩까지!">
+<meta property="og:title" content="제주 — JEJU">
+<meta property="og:description" content="ᄒᆞᆫ저 피ᄒᆞᆸ서! 귤밭을 뒤집어 놓은 새내기 해녀 숨비, 화가 난 사투리 할머니와 한판 승부.">
+<meta name="theme-color" content="#08070c">
+<style>
+  @font-face { font-family: 'Galmuri11'; src: url('fonts/Galmuri11.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+  @font-face { font-family: 'Galmuri11'; src: url('fonts/Galmuri11-Bold.woff2') format('woff2'); font-weight: 700; font-display: swap; }
+  @font-face { font-family: 'Galmuri9'; src: url('fonts/Galmuri9.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #08070c; }
+  body {
+    background: radial-gradient(ellipse at 50% 40%, #1a1424 0%, #0c0a12 60%, #06050a 100%);
+    color: #f4ecff;
+    font-family: 'Galmuri11', ui-monospace, monospace;
+    -webkit-font-smoothing: none;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  }
+  #app {
+    position: relative;
+    height: 100vh; height: 100dvh;
+    display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  #main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  #stageBox { order: 1; flex: 1; min-height: 0; display: grid; place-items: center; padding: 8px; }
+  canvas#game {
+    display: block; image-rendering: pixelated; image-rendering: crisp-edges; touch-action: none;
+    background: #000; border-radius: 4px;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.07), 0 24px 70px rgba(0,0,0,.65);
+  }
+
+  /* 오른쪽 위 시스템 버튼 */
+  .sysbar { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right)); display: flex; gap: 8px; z-index: 5; }
+  .sysbtn {
+    width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; cursor: pointer;
+    background: rgba(20,16,30,.55); border: 1.5px solid rgba(255,255,255,.18); color: #f4ecff;
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    transition: background .15s, transform .1s; padding: 0;
+  }
+  .sysbtn:hover { background: rgba(60,44,80,.7); }
+  .sysbtn:active { transform: scale(.92); }
+  .sysbtn:focus-visible { outline: 2px solid #ffc44d; outline-offset: 2px; }
+  .sysbtn svg { width: 18px; height: 18px; }
+  .sysbtn[hidden] { display: none; }
+  .sysbtn[aria-pressed="false"] .on, .sysbtn[aria-pressed="true"] .off { display: none; }
+
+  /* 터치 조작 */
+  .pad { order: 2; flex: none; display: none; justify-content: space-between; align-items: flex-end; padding: 6px 12px calc(14px + env(safe-area-inset-bottom)); }
+  .pad-group { display: flex; gap: 8px; align-items: flex-end; }
+  .pad button {
+    --b: clamp(44px, 13vw, 64px);
+    width: var(--b); height: var(--b); border-radius: 50%; padding: 0; touch-action: none; cursor: pointer;
+    background: rgba(24,18,36,.6); border: 2px solid rgba(255,255,255,.22); color: #fff;
+    display: grid; place-items: center; font: inherit; font-weight: 700; font-size: 11px; letter-spacing: .5px;
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    transition: transform .06s, background .06s;
+  }
+  .pad button svg { width: 46%; height: 46%; }
+  .pad button span { display: block; margin-top: -2px; opacity: .85; }
+  .pad button.big { --b: clamp(52px, 16vw, 76px); background: rgba(255,150,40,.28); border-color: rgba(255,196,77,.55); }
+  .pad button.on { transform: scale(.9); background: rgba(255,255,255,.28); }
+  .pad .lr { display: flex; gap: 8px; }
+
+  @media (pointer: coarse) { .pad { display: flex; } }
+  /* 세로 폰: 화면은 위쪽에, 남는 자리에 가로 안내 */
+  @media (pointer: coarse) and (orientation: portrait) {
+    #stageBox { flex: none; padding: calc(56px + env(safe-area-inset-top)) 8px 8px; }
+    #main::after { content: '가로로 돌리면 더 크게 즐길 수 있어요'; order: 1; flex: 1; display: grid; place-items: center; color: rgba(244,236,220,.45); font-size: 12px; letter-spacing: .5px; }
+  }
+  /* 가로 모드 폰: 화면 위에 반투명하게 겹침 */
+  @media (pointer: coarse) and (orientation: landscape) {
+    #stageBox { padding: 0; }
+    /* 버튼은 화면 양옆 여백에 (게임 화면 · 땅 위 장애물을 가리지 않게) */
+    #stageBox { padding: 0 calc(116px + env(safe-area-inset-right)) 0 calc(116px + env(safe-area-inset-left)); }
+    .pad { position: absolute; inset: auto 0 0 0; padding: 0 calc(6px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) calc(6px + env(safe-area-inset-left)); pointer-events: none; }
+    .pad-group { width: 106px; flex-wrap: wrap; justify-content: center; gap: 8px; }
+    .pad button { pointer-events: auto; --b: 48px; background: rgba(24,18,36,.5); }
+    .pad button.big { --b: 58px; }
+    canvas#game { border-radius: 0; box-shadow: none; }
+    /* 소리 · 전체화면 버튼은 화면 옆 여백에 세로로 (점수판을 가리지 않게) */
+    .sysbar { flex-direction: column; top: calc(8px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right)); }
+    .sysbtn { width: 34px; height: 34px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="sysbar">
+    <button class="sysbtn" id="muteBtn" type="button" aria-label="소리" aria-pressed="true">
+      <svg class="on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12"/></svg>
+      <svg class="off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16 9l6 6M22 9l-6 6"/></svg>
+    </button>
+    <button class="sysbtn" id="shareBtn" type="button" aria-label="결과 공유" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6h14v-6"/></svg>
+    </button>
+    <button class="sysbtn" id="fsBtn" type="button" aria-label="전체화면">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+    </button>
+  </div>
+
+  <div id="main">
+    <div id="stageBox">
+      <canvas id="game" width="426" height="240" aria-label="제주 게임 화면"></canvas>
+    </div>
+    <div class="pad">
+      <div class="pad-group pad-l">
+        <div class="lr">
+          <button type="button" data-key="left" aria-label="왼쪽"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M15 4L6 12l9 8z"/></svg></button>
+          <button type="button" data-key="right" aria-label="오른쪽"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 4l9 8-9 8z"/></svg></button>
+        </div>
+      </div>
+      <div class="pad-group pad-r">
+        <button type="button" data-key="roll" aria-label="구르기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 12a8 8 0 1 1-3-6.2"/><path d="M17 2v4h-4" /></svg></button>
+        <button type="button" data-key="throw" aria-label="귤 던지기"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="7" fill="#ff9a2a"/><path d="M12 6c1-2 3-3 5-2-1 2-3 3-5 2z" fill="#7cc44a"/></svg></button>
+        <button type="button" class="big" data-key="jump" aria-label="점프"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 4l8 9h-5v7H9v-7H4z"/></svg></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/art.js?v=267"></script>
+<script src="js/chars.js?v=267"></script>
+<script src="js/portraits.js?v=267"></script>
+<script src="js/boss.js?v=267"></script>
+<script src="js/scenery.js?v=267"></script>
+<script src="js/places.js?v=267"></script>
+<script src="js/audio.js?v=267"></script>
+<script src="js/game.js?v=267"></script>
+</body>
+</html>
