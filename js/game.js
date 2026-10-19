@@ -2872,11 +2872,7 @@ function updatePlayer(dt) {
     Sound.sfx.whoosh(); P.sx = 0.8; P.sy = 1.25; fx({ x: P.x, y: P.y - 12, kind: 'flare', size: 7, life: 0.15, col: C.yel[3] });
   }
   if (P.rollBuf > 0) {
-    if (TOUCH.matches && P.hurtT <= 0 && !P.pound && !P.onGround && GROUND - P.y > 44) {   // 터치: 높이 떠서 구르기 = 내려찍기
-      // 공중에서 구르기 = 내려찍기: 곧장 내리꽂혀 착지 충격파로 주변 하르방 · 썩은 귤을 부숨
-      P.rollBuf = 0; P.pound = true; P.flipT = 0; P.rollT = 0; P.vx = 0; P.vy = 0; P.poundT = 0.08;
-      Sound.sfx.whoosh(); P.sx = 0.8; P.sy = 1.25; fx({ x: P.x, y: P.y - 12, kind: 'flare', size: 7, life: 0.15, col: C.yel[3] });
-    } else if (P.hurtT <= 0 && P.rollT <= 0 && P.rollCD <= 0 && !P.pound) {
+    if (P.hurtT <= 0 && P.rollT <= 0 && P.rollCD <= 0 && !P.pound) {
       P.rollBuf = 0;
       if (dir) P.face = dir;
       P.rollT = ROLL_T; P.flipT = 0;
@@ -3983,7 +3979,7 @@ function drawHowto() {
   drawStr(p2 ? '게임 요소 (2/2)' : '조작법 (1/2)', W / 2, py + 8, { font: 'b', color: C.yel[2], align: 'center' });
   const touch = TOUCH.matches;
   const rows = p2 ? HOWTO2 : touch
-    ? [['◀ ▶', '이동'], ['▲ 점프', '공중에서 두 번 더 (3단)'], ['↻ 구르기', '무적 회피 · 공중에선 내려찍기'], ['귤 던지기', '꾹 누르면 연사 · 아이템 맞히면 먹음'], ['밟기', '하르방 · 썩은 귤 머리를 밟아 와장창'], ['위쪽 터치', '일시정지']]
+    ? [['◀ ▶', '이동'], ['▲ 점프', '공중에서 두 번 더 (3단)'], ['↻ 구르기', '무적 회피 (몸통 통과) · 공중에서도'], ['▼', '공중에서 내려찍기 · 땅에선 구르기'], ['귤 던지기', '꾹 누르면 연사 · 아이템 맞히면 먹음'], ['밟기', '하르방 · 썩은 귤 머리를 밟아 와장창'], ['위쪽 터치', '일시정지']]
     : [['← →', '이동'], ['Z / Space', '점프 · 공중에서 두 번 더 (3단)'], ['X / Shift', '구르기 (무적, 몸통 통과)'], ['↓ / S', '공중에서 내려찍기 (충격파)'], ['C', '귤 던지기 (꾹 = 연사 · 아이템 맞히면 먹음)'], ['밟기', '하르방 · 썩은 귤 머리를 밟아 와장창'], ['P', '일시정지']];
   rows.forEach(([a, b], i) => {
     const y = py + 26 + i * 16;
