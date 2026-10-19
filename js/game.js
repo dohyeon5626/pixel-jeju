@@ -92,7 +92,7 @@ window.addEventListener('keydown', e => {
 window.addEventListener('keyup', e => { const k = KEYMAP[e.code]; if (k) release(k, e.code); });
 window.addEventListener('blur', () => { releaseAll(); if (state === 'play' && !P.dead) setPause(true); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) { releaseAll(); if (state === 'play' && !P.dead) setPause(true); Sound.stopMusic(); Sound.ambience('rain', 0); Sound.suspend(); } else Sound.resume(); });
-for (const ev of ['pointerup', 'touchend', 'click']) window.addEventListener(ev, () => Sound.init(), { capture: true, passive: true });   // iOS 소리 잠금 풀기
+for (const ev of ['keydown', 'pointerdown', 'mousedown', 'pointerup', 'touchend', 'click']) window.addEventListener(ev, () => Sound.init(), { capture: true, passive: true });   // 아무 키 · 터치든 첫 입력에 소리 잠금 풀기 (iOS는 touchend)
 document.querySelectorAll('[data-key]').forEach(btn => {
   const k = btn.dataset.key;
   const oneShot = k === 'pause' || k === 'mute';
