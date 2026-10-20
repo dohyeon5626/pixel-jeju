@@ -10,7 +10,7 @@ extern "C" {
     fn jburst(x: f64, y: f64, n: f64, spd: f64, life: f64, grav: f64, kind: f64, ncols: f64, c0: f64, c1: f64, c2: f64, c3: f64);
     fn jdust(x: f64, y: f64, n: f64, dir: f64, big: f64);
     fn jlight(x: f64, y: f64, r: f64, col: f64, a: f64);
-    fn jsfx(id: f64, arg: f64);
+    fn jsfx(id: f64, a: f64, b: f64);
     fn jshake(t: f64);
     fn jspark(x: f64, y: f64);
     fn jimpact(x: f64, y: f64, col: f64, power: f64, quiet: f64);
@@ -25,18 +25,29 @@ pub const VOFF: f64 = 60.0;
 
 // ── 이름표: JS가 처음에 받아 가서 번호 ↔ 이름을 바꿈 ──────────
 pub const FX_KINDS: [&str; 10] = ["px", "chunk", "puff", "spark", "ring", "flare", "smoke", "ember", "trail", "streak"];
-pub const SFX: [&str; 18] = [
+pub const SFX: [&str; 26] = [
     "crack", "rise", "hop", "shatter", "gallop", "tink", "boom", "hit", "splat", "throw", "chirp", "thud", "whoosh", "caw", "oink", "honk",
-    "gull", "pop",
+    "gull", "pop", "burst", "letter", "stab", "splash", "wave", "zap", "thunder", "gust",
 ];
 pub const REWARDS: [&str; 4] = ["stompKill", "shotKill", "shatter", "bigShatter"];
 pub const PALS: [&str; 10] = ["soil", "stone", "yel", "org", "red", "teal", "leaf", "cloth", "wood", "skin"];
 // JS 쪽 일 (글자 · 새 객체 · 사운드 덕킹처럼 Rust가 못 하는 것): 부르기 전에 JS가 지금 장애물 객체를 최신 값으로 맞춰 둠
 //  daily(글) · popup(글, x, y, 색) · tang(x, y, vx, vy) · splash(x, 크기) · ghost(x, y, 수명, 색) · glyphs(x, y) · split() · kick(dx, dy) · duck(t) · mean(x, y)
-pub const HOOKS: [&str; 10] = ["daily", "popup", "tang", "splash", "ghost", "glyphs", "split", "kick", "duck", "mean"];
-// hook에 넘기는 글 · 팔레트에 없는 CSS 색
+//  label(x, y, 색) · flash(t, 색) · bolt() · ripple(x, dir) · gset(G 필드, 값)
+pub const HOOKS: [&str; 15] =
+    ["daily", "popup", "tang", "splash", "ghost", "glyphs", "split", "kick", "duck", "mean", "label", "flash", "bolt", "ripple", "gset"];
+// hook에 넘기는 글 · 팔레트에 없는 CSS 색 · gset으로 고치는 G 필드
 pub const STRS: [&str; 3] = ["bee", "+귤", "격파"];
-pub const CSS: [&str; 1] = ["rgba(255,244,224,0.45)"];
+pub const CSS: [&str; 7] = [
+    "rgba(255,244,224,0.45)",
+    "rgba(255,244,224,0.5)",
+    "rgba(255,244,224,0.8)",
+    "rgba(150,130,105,0.6)",
+    "rgba(220,226,240,0.45)",
+    "rgba(200,210,230,0.45)",
+    "rgba(255,200,180,0.45)",
+];
+pub const GFIELDS: [&str; 5] = ["windTarget", "storm", "stormHold", "stormDir", "lightning"];
 fn idx(list: &[&str], k: &str) -> f64 {
     list.iter().position(|x| *x == k).expect("이름표에 없음") as f64
 }
@@ -55,7 +66,8 @@ pub fn pc(pal: &str, i: usize) -> f64 {
     -((idx(&PALS, pal) as usize * 16 + i) as f64) - 1.0
 }
 
-// ── 지금 판의 값 (JS가 부르기 전에 CTX_BUF에 씀: 화면 폭 · 숨비 자리 · 숨비 죽음 · 경기장 양 끝 · 속도 배율 · 귤자석 남은 시간) ──
+// ── 지금 판의 값 (JS가 부르기 전에 CTX_BUF에 씀) ──
+//  화면 폭 · 숨비 자리 · 숨비 죽음 · 경기장 양 끝 · 속도 배율 · 귤자석 남은 시간 · 음악 템포(없으면 0) · 단계 · 먹구름 · 번개
 pub struct Ctx {
     pub w: f64,
     pub px: f64,
@@ -65,15 +77,32 @@ pub struct Ctx {
     pub arena_r: f64,
     pub speed: f64,
     pub magnet: f64,
+    pub tempo: f64,
+    pub tier: f64,
+    pub storm: f64,
+    pub lightning: f64,
 }
-pub const CTX_LEN: usize = 8;
-static mut CTX_BUF: [f64; CTX_LEN] = [426.0, 0.0, 0.0, 0.0, 0.0, 426.0, 1.0, 0.0];
+pub const CTX_LEN: usize = 12;
+static mut CTX_BUF: [f64; CTX_LEN] = [426.0, 0.0, 0.0, 0.0, 0.0, 426.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0];
 pub fn ctx_buf() -> *mut f64 {
     unsafe { std::ptr::addr_of_mut!(CTX_BUF) as *mut f64 }
 }
 pub fn ctx() -> Ctx {
     let b = unsafe { *std::ptr::addr_of!(CTX_BUF) };
-    Ctx { w: b[0], px: b[1], py: b[2], p_dead: b[3] != 0.0, arena_l: b[4], arena_r: b[5], speed: b[6], magnet: b[7] }
+    Ctx {
+        w: b[0],
+        px: b[1],
+        py: b[2],
+        p_dead: b[3] != 0.0,
+        arena_l: b[4],
+        arena_r: b[5],
+        speed: b[6],
+        magnet: b[7],
+        tempo: b[8],
+        tier: b[9],
+        storm: b[10],
+        lightning: b[11],
+    }
 }
 
 // ── 난수 (원래 JS rand · randi · pick) ────────────────────────
@@ -88,6 +117,16 @@ pub fn randi(a: f64, b: f64) -> f64 {
 }
 pub fn pick(a: &[f64]) -> f64 {
     a[(random() * a.len() as f64).floor() as usize]
+}
+// Math.sign (0 · -0 · NaN은 그대로)
+pub fn sign(v: f64) -> f64 {
+    if v > 0.0 {
+        1.0
+    } else if v < 0.0 {
+        -1.0
+    } else {
+        v
+    }
 }
 pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
     a + (b - a) * t
@@ -160,7 +199,11 @@ pub fn light(x: f64, y: f64, r: f64, col: f64, a: f64) {
     unsafe { jlight(x, y, r, col, a) }
 }
 pub fn sfx(name: &str) {
-    unsafe { jsfx(idx(&SFX, name), 0.0) }
+    sfx_args(name, 0.0, 0.0)
+}
+// 인자가 있는 소리 (burst(강세) · letter(번호, 강세))
+pub fn sfx_args(name: &str, a: f64, b: f64) {
+    unsafe { jsfx(idx(&SFX, name), a, b) }
 }
 pub fn shake(t: f64) {
     unsafe { jshake(t) }
@@ -192,6 +235,10 @@ pub fn hook(name: &str, a: f64, b: f64, c: f64, d: f64) {
 pub fn str_id(s: &str) -> f64 {
     idx(&STRS, s)
 }
+// G의 전역 값 고치기 (바람 · 먹구름 · 번개)
+pub fn gset(field: &str, v: f64) {
+    hook("gset", idx(&GFIELDS, field), v, 0.0, 0.0);
+}
 
 // 맞았을 때 종류 (hz.rs EVENTS 순서: 0 귤에 맞음 · 1 밟힘 · 2 밟고 튀어 오름)
 pub const EV_STOMP: i32 = 1;
@@ -222,7 +269,7 @@ pub fn tables_json(kinds: &[(&str, Schema)]) -> String {
         .collect::<Vec<_>>()
         .join(",");
     format!(
-        "{{\"fx\":{},\"sfx\":{},\"rewards\":{},\"pals\":{},\"hooks\":{},\"strs\":{},\"css\":{},\"kinds\":{{{}}}}}",
+        "{{\"fx\":{},\"sfx\":{},\"rewards\":{},\"pals\":{},\"hooks\":{},\"strs\":{},\"css\":{},\"gfields\":{},\"kinds\":{{{}}}}}",
         list(&FX_KINDS),
         list(&SFX),
         list(&REWARDS),
@@ -230,6 +277,7 @@ pub fn tables_json(kinds: &[(&str, Schema)]) -> String {
         list(&HOOKS),
         list(&STRS),
         list(&CSS),
+        list(&GFIELDS),
         kinds
     )
 }

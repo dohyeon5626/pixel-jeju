@@ -1,6 +1,7 @@
 // 장애물 종류 목록: 이름 · 필드 목록 · 움직임 · 판정 상자 · 맞았을 때 (js/wasm.js가 이름으로 번호를 찾음)
 use crate::game::{Boxes, Schema};
 use crate::hz_air::*;
+use crate::hz_event::*;
 use crate::hz_ground::*;
 use crate::hz_item::*;
 
@@ -37,6 +38,18 @@ pub const KINDS: &[Kind] = &[
     Kind { name: "dolphin", schema: dolphin::SCHEMA, update: dolphin::update, boxes: dolphin::boxes, on: Some(dolphin::on) },
     Kind { name: "crow", schema: crow::SCHEMA, update: crow::update, boxes: crow::boxes, on: Some(crow::on) },
     Kind { name: "dialect", schema: dialect::SCHEMA, update: dialect::update, boxes: dialect::boxes, on: Some(dialect::on) },
+    Kind { name: "beatBar", schema: beat_bar::SCHEMA, update: beat_bar::update, boxes: beat_bar::boxes, on: None },
+    Kind { name: "vortex", schema: vortex::SCHEMA, update: vortex::update, boxes: vortex::boxes, on: None },
+    Kind { name: "subSlam", schema: sub_slam::SCHEMA, update: sub_slam::update, boxes: sub_slam::boxes, on: None },
+    Kind { name: "areaSmash", schema: area_smash::SCHEMA, update: area_smash::update, boxes: area_smash::boxes, on: None },
+    Kind { name: "laser", schema: laser::SCHEMA, update: laser::update, boxes: laser::boxes, on: None },
+    Kind { name: "slashWave", schema: slash_wave::SCHEMA, update: slash_wave::update, boxes: slash_wave::boxes, on: None },
+    Kind { name: "knifeDrop", schema: knife_drop::SCHEMA, update: knife_drop::update, boxes: knife_drop::boxes, on: None },
+    Kind { name: "waterFall", schema: water_fall::SCHEMA, update: water_fall::update, boxes: water_fall::boxes, on: None },
+    Kind { name: "ripple", schema: ripple::SCHEMA, update: ripple::update, boxes: ripple::boxes, on: None },
+    Kind { name: "oreumRise", schema: oreum_rise::SCHEMA, update: oreum_rise::update, boxes: oreum_rise::boxes, on: None },
+    Kind { name: "tideWave", schema: tide_wave::SCHEMA, update: tide_wave::update, boxes: tide_wave::boxes, on: None },
+    Kind { name: "hopLand", schema: hop_land::SCHEMA, update: hop_land::update, boxes: hop_land::boxes, on: None },
     Kind { name: "pickup", schema: pickup::SCHEMA, update: pickup::update, boxes: no_boxes, on: None },
     Kind { name: "shot", schema: shot::SCHEMA, update: shot::update, boxes: no_boxes, on: None },
     Kind { name: "answer", schema: answer::SCHEMA, update: answer::update, boxes: no_boxes, on: None },

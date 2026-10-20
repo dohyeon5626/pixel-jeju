@@ -14,6 +14,7 @@ mod fx;
 mod game;
 mod hz;
 mod hz_air;
+mod hz_event;
 mod hz_ground;
 mod hz_item;
 mod js;

@@ -10,11 +10,11 @@
 let WK = null;
 const GAME_SCRIPTS = ['chars', 'portraits', 'boss', 'scenery', 'audio', 'game'];
 (async () => {
-  const url = 'wasm/jeju.wasm?v=281', imports = { m: { jsin: Math.sin, jcos: Math.cos, jasin: Math.asin, jexp: Math.exp, jpow: Math.pow, jatan2: Math.atan2, jhypot2: Math.hypot, jhypot3: Math.hypot }, g: gameImports() };
+  const url = 'wasm/jeju.wasm?v=282', imports = { m: { jsin: Math.sin, jcos: Math.cos, jasin: Math.asin, jexp: Math.exp, jpow: Math.pow, jatan2: Math.atan2, jhypot2: Math.hypot, jhypot3: Math.hypot }, g: gameImports() };
   try {
     let inst;
     if (location.protocol === 'file:') {   // file://에선 fetch가 막혀서 base64 사본(wasm/jeju-wasm.js)을 스크립트로 읽음
-      await new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'wasm/jeju-wasm.js?v=281'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+      await new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'wasm/jeju-wasm.js?v=282'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
       inst = (await WebAssembly.instantiate(Uint8Array.from(atob(window.JEJU_WASM), c => c.charCodeAt(0)), imports)).instance;
     } else {
       try { inst = (await WebAssembly.instantiateStreaming(fetch(url), imports)).instance; }
@@ -22,7 +22,7 @@ const GAME_SCRIPTS = ['chars', 'portraits', 'boss', 'scenery', 'audio', 'game'];
     }
     WK = wkApi(inst.exports);
   } catch (e) { console.error('WASM을 불러오지 못함', e); wasmMissing(); return; }
-  for (const n of GAME_SCRIPTS) { const s = document.createElement('script'); s.src = `js/${n}.js?v=281`; s.async = false; document.body.appendChild(s); }   // async = false: 붙인 순서대로 실행
+  for (const n of GAME_SCRIPTS) { const s = document.createElement('script'); s.src = `js/${n}.js?v=282`; s.async = false; document.body.appendChild(s); }   // async = false: 붙인 순서대로 실행
 })();
 // WASM 없이는 배경 · 물리가 없어 시작할 수 없음 (아주 오래된 브라우저 등)
 function wasmMissing() {
@@ -45,7 +45,7 @@ function gameImports() {
     jburst: (x, y, n, spd, life, grav, k, nc, c0, c1, c2, c3) => burst(x, y, n, [c0, c1, c2, c3].slice(0, nc).map(hzCol), spd, life, grav, HZ.fx[k]),
     jdust: (x, y, n, dir, big) => dust(x, y, n, dir, big),
     jlight: (x, y, r, col, a) => light(x, y, r, hzCol(col), a),
-    jsfx: (id, arg) => Sound.sfx[HZ.sfx[id]](arg),
+    jsfx: (id, a, b) => Sound.sfx[HZ.sfx[id]](a, b),
     jshake: t => shake(t),
     jspark: (x, y) => spark(x, y),
     jimpact: (x, y, col, power, quiet) => impact(x, y, hzCol(col), power, !!quiet),
@@ -97,7 +97,7 @@ function wkApi(ex) {
   const pack = (h, K) => { const f = hzView(K.length); K.forEach(([n, t], i) => { const v = h[n]; f[i] = t === 'n' ? (v ?? NaN) : t === 'b' ? (v ? 1 : 0) : t.indexOf(v); }); };
   const unpack = (h, K) => { const f = hzView(K.length); K.forEach(([n, t], i) => { const v = f[i]; if (t === 'n') { if (!Number.isNaN(v)) h[n] = v; } else h[n] = t === 'b' ? v !== 0 : t[v]; }); };
   // 지금 판의 값 (game.rs Ctx 순서)
-  const setCtx = () => { const c = new Float64Array(ex.memory.buffer, ex.hz_ctx(), 8); c[0] = W; c[1] = P.x; c[2] = P.y; c[3] = P.dead ? 1 : 0; c[4] = G.arenaL; c[5] = G.arenaR; c[6] = G.speed; c[7] = G.magnetT || 0; };
+  const setCtx = () => { const c = new Float64Array(ex.memory.buffer, ex.hz_ctx(), 12); c[0] = W; c[1] = P.x; c[2] = P.y; c[3] = P.dead ? 1 : 0; c[4] = G.arenaL; c[5] = G.arenaR; c[6] = G.speed; c[7] = G.magnetT || 0; c[8] = Sound.tempo || 0; c[9] = G.tier; c[10] = G.storm || 0; c[11] = G.lightning || 0; };
   // Rust가 부르는 JS 일 (game.rs HOOKS): 부르기 전에 지금 객체를 최신 값으로 맞춰 둠
   let cur = null;
   const HOOK = {
@@ -111,6 +111,11 @@ function wkApi(ex) {
     kick: (dx, dy) => kick(dx, dy),
     duck: t => Sound.duck(t),
     mean: (x, y) => popup('= ' + cur.h.mean, x, y, C.yel[2], 's'),
+    label: (x, y, col) => popup(cur.h.label + '!', x, y, hzCol(col), 's'),
+    flash: (t, col) => flashFx(t, hzCol(col)),
+    bolt: () => cur.h.makeBolt(),
+    ripple: (x, d) => { const r = new Ripple(x, d, (105 + G.tier * 5) * evK()); r.pat = cur.h.pat; spawnHz(r); },
+    gset: (k, v) => { G[HZ.gfields[k]] = v; },
   };
   const hooks = HZ.hooks.map(n => HOOK[n]);
   HZ.hook = (id, a, b, c, d) => { unpack(cur.h, cur.K); hooks[id](a, b, c, d); };
@@ -138,7 +143,7 @@ function wkApi(ex) {
     // 장애물 한 스텝 (살아 있으면 true) · 판정 상자 [{ x, y, w, h }] · 맞았을 때 (ev: 'shot' 귤 · 'stomp' 밟힘 · 'bounce' 밟고 튀어 오름)
     hzUpdate(h, kind, dt) { return call(h, kind, (k, n) => ex.hz_update(k, hzBuf, n, dt)); },
     hzBoxes(h, kind) {
-      const K = HZ.kinds[kind]; pack(h, K); const n = ex.hz_boxes(kindIdx[kind], hzBuf, K.length, boxBuf); if (!n) return NONE;
+      const K = HZ.kinds[kind]; pack(h, K); setCtx(); const n = ex.hz_boxes(kindIdx[kind], hzBuf, K.length, boxBuf); if (!n) return NONE;
       const b = new Float64Array(ex.memory.buffer, boxBuf, n * 4), out = []; for (let i = 0; i < n; i++) out.push({ x: b[i * 4], y: b[i * 4 + 1], w: b[i * 4 + 2], h: b[i * 4 + 3] });
       return out;
     },

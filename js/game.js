@@ -1030,41 +1030,12 @@ const LINE_G = graphemes(HALMANG_LINE).filter(ch => !/[",.?…]/.test(ch));   //
 const letterSpr = ch => logoText(ch, 2, ['#5a4632', '#8a6a44', '#b8905a', '#e0bc7a', '#fff0c8']);
 class BeatBar { // 할망 비트에 맞춰 땅에서 솟는 주상절리 기둥 (ch가 있으면 그 글자가 솟음)
   constructor(x, beatAt, clock, tall = false, ch = null) {
-    this.ch = ch; if (ch) { this.spr = letterSpr(ch); this.H = this.spr.height - 18; } else { this.H = (tall ? 50 : 33) + randi(-5, 5); this.spr = pick(BASALTS); } this.x = x; this.beatAt = beatAt; this.b0 = clock(); this.clock = clock; this.h = 0; this.t = 0; this.dodged = false; this.up = false; this.done = false; this.lastB = Math.floor(clock());
+    this.ch = ch; this.letter = !!ch; if (ch) { this.spr = letterSpr(ch); this.H = this.spr.height - 18; } else { this.H = (tall ? 50 : 33) + randi(-5, 5); this.spr = pick(BASALTS); } this.sprH = this.spr.height; this.x = x; this.beatAt = beatAt; this.b0 = clock(); this.clock = clock; this.h = 0; this.t = 0; this.dodged = false; this.up = false; this.done = false; this.lastB = Math.floor(clock());
     this.crack = []; for (const s of [-1, 1]) { let cx = 0, cy = 0; for (let i = 0; i < 7; i++) { cx += s * randi(1, 2); if (Math.random() < 0.5) cy = clamp(cy + randi(-1, 1), 0, 2); this.crack.push([cx, cy]); } }
   }
   get b() { return this.clock(); }
-  update(dt) {
-    this.t += dt;
-    const b = this.b;
-    // 박자마다 그 자리 흙알갱이가 톡톡 튐 (언제 솟을지 몸으로 느끼게)
-    if (!this.up && Math.floor(b) > this.lastB) { this.lastB = Math.floor(b); const last = this.beatAt - b < 1.05; for (let i = 0; i < (last ? 4 : 2); i++) fx({ x: this.x + rand(-5, 5), y: GROUND - 1, vx: rand(-15, 15), vy: -rand(40, last ? 110 : 70), grav: 420, life: 0.35, kind: 'chunk', size: 1, col: pick([C.soil[3], C.stone[3]]) }); }
-    if (!this.up && (b >= this.beatAt || this.t > ((this.beatAt - this.b0) * 60 / (Sound.tempo || 92) + 1) * G.speed)) {   // 박자 시계가 멈춰도 결국은 솟음
-      this.up = true; this.upT = 0; shake(this.acc ? 0.07 : 0.03); Sound.sfx.burst(this.acc); if (this.ch) Sound.sfx.letter(this.j || 0, this.acc);   /* 땅을 뚫는 쿵 (+ 글자는 음계 소리) */
-      for (const sd of [-1, 1]) fx({ x: this.x + sd * 6, y: GROUND - 1, vx: sd * 40, vy: -10, drag: 3, life: 0.3, kind: 'puff', size: 0 });
-      fx({ x: this.x, y: GROUND - 1, kind: 'ring', big: !!this.acc, life: this.acc ? 0.3 : 0.22, col: C.yel[3] });
-      if (this.acc) { fx({ x: this.x, y: GROUND - this.H / 2, kind: 'flare', size: 9, life: 0.12, col: '#fff4d8' }); for (let i = 0; i < 4; i++) fx({ x: this.x + rand(-8, 8), y: GROUND - 1, vx: rand(-90, 90), vy: -rand(90, 170), grav: 420, life: rand(0.4, 0.6), kind: 'chunk', size: 2, col: pick([C.stone[2], C.soil[3]]) }); }
-      for (let i = 0; i < 5; i++) fx({ x: this.x + rand(-6, 6), y: GROUND - rand(4, 20), vx: rand(-60, 60), vy: -rand(60, 140), grav: 420, life: rand(0.35, 0.6), kind: 'chunk', size: randi(1, 2), col: pick([C.stone[2], C.stone[3], C.soil[3]]) });
-    }
-    if (this.up) {
-      const was = this.upT; this.upT += dt / G.speed;
-      if (this.ch) {   // 글자: 땅을 뚫고 솟구침 → 살짝 내려앉아 땅 위에 뜬 채 살랑 → 다시 땅속으로
-        // 높이(gap) = 글자 아랫단과 땅 사이: 땅속에서 확 뛰어오름 → 떨어지듯 내려와 살짝 튕기며 멈춤 → 뜬 채 살랑 → 다시 땅속으로
-        const u = this.upT, S = this.spr.height, base = GROUND - S + 10, peak = this.acc ? 22 : 16, hov = 7;
-        const gap = u < 0.09 ? -S + (peak + S) * easeOut(u / 0.09) : u < 0.17 ? peak - (peak - hov + 2) * Math.pow((u - 0.09) / 0.08, 2) : u < 0.2 ? hov - 2 + 2 * Math.sin((u - 0.17) / 0.03 * Math.PI / 2) : u < 0.26 ? hov + Math.sin((u - 0.2) * 30) * 0.8 : hov - (hov + S) * Math.pow(clamp((u - 0.26) / 0.07, 0, 1), 1.5);
-        this.top = Math.round(base - gap); this.gap = gap; this.lifted = clamp(gap / 6, 0, 1);
-        this.boxY = this.top + 4; this.h = Math.max(0, Math.min(GROUND, this.top + S - 10) - this.boxY);   // 판정은 글자 몸통만 (높이 뛴 순간엔 밑이 빔)
-        if (was < 0.17 && u >= 0.17) for (const sd of [-1, 1]) fx({ x: this.x + sd * 5, y: GROUND - 1, vx: sd * 35, vy: -8, drag: 4, life: 0.25, kind: 'puff', size: 0 });   // 내려앉을 때 밑에서 흙먼지
-        if (was < 0.26 && u >= 0.26) for (let i = 0; i < 4; i++) fx({ x: this.x + rand(-5, 5), y: GROUND - 2, vx: rand(-25, 25), vy: -rand(20, 50), grav: 380, life: 0.35, kind: 'chunk', size: 1, col: pick([C.soil[3], C.stone[2]]) });   // 들어갈 때 흙이 튐
-        return !this.dead && !(this.upT > 0.34);
-      }
-      const ov = this.acc ? 1.15 : 1;   // 기둥 강세: 높이 솟았다가 내려앉음
-      this.h = this.upT < 0.045 ? Math.round(this.H * ov * this.upT / 0.045) : this.upT < 0.09 ? Math.round(this.H * (ov - (ov - 1) * (this.upT - 0.045) / 0.045)) : this.upT < 0.24 ? this.H : Math.round(this.H * Math.max(0, 1 - (this.upT - 0.24) / 0.07));
-      if (was < 0.24 && this.upT >= 0.24) for (let i = 0; i < 4; i++) fx({ x: this.x + rand(-5, 5), y: GROUND - rand(10, 30), vx: rand(-25, 25), vy: rand(-30, 0), grav: 380, life: 0.4, kind: 'chunk', size: 1, col: C.stone[2] });
-    }
-    return !this.dead && !(this.up && this.upT > 0.32);
-  }
-  boxes() { return this.h > 8 ? [this.ch ? { x: this.x - 8, y: this.boxY ?? GROUND - this.h, w: 16, h: this.h } : { x: this.x - 5, y: GROUND - this.h, w: 10, h: this.h }] : NONE; }
+  update(dt) { this.bNow = this.b; return WK.hzUpdate(this, 'beatBar', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
+  boxes() { return WK.hzBoxes(this, 'beatBar'); }
   draw() {
     const x = Math.round(this.x);
     if (!this.up) {
@@ -1098,27 +1069,10 @@ class BeatBar { // 할망 비트에 맞춰 땅에서 솟는 주상절리 기둥 
 // ── 할망 시그니처 2: 태풍 마이삭 — 땅을 기어 오는 소용돌이, 플레이어를 끌어당김 ──
 class Vortex { // 태풍 마이삭: 땅에서 말려 올라가 깔때기가 된 뒤 기어 옴
   constructor(x, speed, dir = -1) { this.x = x; this.speed = speed; this.dir = dir; this.t = 0; this.dodged = false; this.spin = 0; this.formT = 0.6 * G.speed; Sound.sfx.whoosh(); }
-  update(dt) {
-    this.t += dt; this.spin += dt * 9;
-    const formed = this.t >= this.formT;
-    if (formed) this.x += this.dir * this.speed * dt;
-    if (Math.random() < dt * (formed ? 25 : 40)) { const a = rand(0, 6.28); fx({ x: this.x + Math.cos(a) * 14, y: GROUND - rand(4, 36), vx: -Math.sin(a) * 60 + (formed ? this.dir * this.speed : 0), vy: -rand(30, 70), life: 0.6, kind: 'chunk', size: 1, col: pick([C.leaf[2], C.leaf[3], C.wood[2]]) }); }
-    if (formed && Math.random() < dt * 22) { const a = rand(0, 6.28); fx({ x: this.x + Math.cos(a) * rand(10, 22), y: GROUND - rand(1, 10), vx: -Math.sin(a) * rand(60, 110) + this.dir * this.speed * 0.5, vy: -rand(20, 70), grav: 160, life: 0.5, kind: 'chunk', size: 1, col: pick(Vortex.DUST) }); }   // 발치에서 흙 알갱이가 휘감겨 튐
-    G.windTarget = Math.sign(this.x - P.x) * Math.min(52, 34 + G.tier * 4) * (formed ? 1 : 0.4);
-    if (formed && Math.random() < dt * 18) { const sd = Math.random() < 0.5 ? -1 : 1; fx({ x: this.x + sd * rand(40, 90), y: GROUND - rand(1, 5), vx: -sd * rand(120, 180), vy: -rand(0, 12), life: 0.35, kind: 'streak', len: randi(3, 7), col: 'rgba(150,130,105,0.6)' }); }   // 땅을 쓸며 빨려 드는 흙먼지
-    if (this.big) { G.storm = Math.min(0.7, (G.storm || 0) + dt * 1.5); G.stormHold = 0.15; G.stormDir = this.dir; }   // 마이삭: 하늘이 먹구름으로 덮이고 빗소리
-    if (this.big) {   // 마이삭: 깔때기 꼭대기로 번개가 내리꽂히고, 화면 끝에서 바람이 빨려 들어감
-      this.boltT = (this.boltT ?? 0.4) - dt; this.bolt = Math.max(0, (this.bolt || 0) - dt);
-      if (this.boltT <= 0) { this.boltT = rand(0.9, 1.5) * G.speed; this.bolt = 0.13; G.lightning = Math.max(G.lightning || 0, 0.12); Sound.sfx.thunder(); shake(0.12); this.boltPts = []; let bx = this.x + rand(-30, 30); for (let y = -VOFF; y < GROUND - 60; y += 6) { const u = (y + VOFF) / (GROUND - 60 + VOFF); bx += rand(-5, 5) + (this.x - bx) * u * 0.4; this.boltPts.push([Math.round(bx), y]); } this.boltPts.push([Math.round(this.x), GROUND - 60]); }   // 내려올수록 깔때기 쪽으로 모여 끝이 옆으로 꺾이지 않게
-      if (Math.random() < dt * 20) { const sd = Math.random() < 0.5 ? -1 : 1, sy = rand(-VOFF + 30, GROUND - 6); fx({ x: sd < 0 ? -4 : W + 4, y: sy, vx: (this.x - (sd < 0 ? 0 : W)) * 1.6, vy: (GROUND - 30 - sy) * 0.8, life: 0.6, kind: 'streak', len: randi(6, 14), col: 'rgba(220,226,240,0.45)' }); }
-    }
-    if (Math.random() < dt * 6) Sound.sfx.gust();
-    if (Math.random() < dt * 30) fx({ x: rand(0, W), y: -VOFF - 4, vx: -60, vy: rand(260, 340), life: (GROUND + VOFF + 12) / 260, kind: 'streak', len: randi(5, 9), col: 'rgba(200,210,230,0.45)' });
-    const alive = !this.dead && this.x > -40 && this.x < W + 40;
-    if (!alive) G.windTarget = 0;
-    return alive;
-  }
-  boxes() { const h = this.big ? 40 : 30; return this.t < this.formT ? NONE : [{ x: this.x - 9, y: GROUND - h, w: 18, h }]; }
+  update(dt) { return WK.hzUpdate(this, 'vortex', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
+  boxes() { return WK.hzBoxes(this, 'vortex'); }
+  // 번개 모양 (Rust가 번개 칠 때 부름): 내려올수록 깔때기 쪽으로 모여 끝이 옆으로 꺾이지 않게
+  makeBolt() { this.boltPts = []; let bx = this.x + rand(-30, 30); for (let y = -VOFF; y < GROUND - 60; y += 6) { const u = (y + VOFF) / (GROUND - 60 + VOFF); bx += rand(-5, 5) + (this.x - bx) * u * 0.4; this.boltPts.push([Math.round(bx), y]); } this.boltPts.push([Math.round(this.x), GROUND - 60]); }
   debris(front) {
     const cx = this.x;
     for (let i = 0; i < 6; i++) {
@@ -1165,15 +1119,9 @@ function subButton(label) {
   return (SUB_BTN[label] = c);
 }
 class SubSlam {
-  constructor(x, label) { this.x = x; this.spr = subButton(label); this.y = -VOFF - 20; this.t = 0; this.warn = 0.55 * G.speed; this.state = 'warn'; this.dodged = false; this.label = label; }
-  update(dt) {
-    this.t += dt;
-    if (this.state === 'warn' && this.t >= this.warn) this.state = 'fall';
-    if (this.state === 'fall') { this.vy = Math.min(1100, (this.vy || 280) + 3200 * dt / G.speed); this.y += this.vy / G.speed * dt; if (this.y >= GROUND - this.spr.height) { this.y = GROUND - this.spr.height; this.state = 'hold'; this.holdT = 0; Sound.sfx.thud(); hitstop(0.025, 0.4); shake(0.1); impact(this.x, GROUND - 2, C.red[3], 0.7); burst(this.x, GROUND - 8, 6, [C.red[2], C.red[3], '#fff4e0'], 90, 0.5, 320, 'chunk'); popup(this.label + '!', this.x, GROUND - 26, C.red[3], 's'); } }
-    if (this.state === 'hold') { this.holdT += dt; if (this.holdT > 0.3) { burst(this.x, GROUND - 6, 8, [C.red[2], C.red[3]], 70, 0.4, 200); return false; } }
-    return !this.dead;
-  }
-  boxes() { return this.state === 'warn' ? NONE : [{ x: this.x - this.spr.width / 2 + 2, y: this.y + 2, w: this.spr.width - 4, h: this.spr.height - 2 }]; }
+  constructor(x, label) { this.x = x; this.spr = subButton(label); this.sprW = this.spr.width; this.sprH = this.spr.height; this.y = -VOFF - 20; this.t = 0; this.warn = 0.55 * G.speed; this.state = 'warn'; this.dodged = false; this.label = label; }
+  update(dt) { return WK.hzUpdate(this, 'subSlam', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
+  boxes() { return WK.hzBoxes(this, 'subSlam'); }
   draw() {
     const w = this.spr.width;
     // 그림자 예고: 떨어질수록 진해짐
@@ -1197,31 +1145,9 @@ let SKILL_SEEN = {}; try { const v = JSON.parse(localStorage.getItem('jeju.skill
 let CRATE = null;
 function crateSprite() { return CRATE || (CRATE = WK.crate()); }
 class AreaSmash {
-  constructor(x0, x1, delay) { this.x0 = x0; this.x1 = x1; this.delay = delay; this.t = 0; this.dodged = false; this.hitT = -1; this.y = -VOFF - 24; }
-  hangY() { const e = easeOut(this.t / (0.35 * G.speed)), k = clamp(this.t / this.delay, 0, 1); return Math.round(-VOFF + 14 + 22 * e - (k > 0.75 ? 3 * (k - 0.75) / 0.25 : 0)); }
-  update(dt) {
-    this.t += dt;
-    const k = this.t / this.delay;
-    // 떨어지기 직전: 상자 틈으로 흙먼지 · 귤잎이 부스스
-    if (this.hitT < 0 && k > 0.6 && Math.random() < dt * 30) fx({ x: rand(this.x0 + 4, this.x1 - 4), y: this.hangY() + 20, vx: rand(-8, 8), vy: rand(20, 50), grav: 200, life: 0.6, kind: 'chunk', size: 1, col: pick([C.wood[2], C.leaf[2], C.soil[3]]) });
-    if (this.t >= this.delay && this.hitT < 0) { this.hitT = 0; this.y = this.hangY(); Sound.sfx.whoosh(); }
-    if (this.hitT >= 0) {
-      this.hitT += dt;
-      this.y = Math.min(GROUND - 20, this.y + dt * 1800);
-      if (this.y >= GROUND - 20 && !this.landed) {
-        this.landed = true; Sound.sfx.boom(); shake(0.18); light((this.x0 + this.x1) / 2, GROUND - 8, 40, C.org[3], 1);
-        const n = Math.ceil((this.x1 - this.x0 - 12) / 26), mid = Math.floor(n / 2);
-        for (let x = this.x0 + 12, i = 0; x < this.x1; x += 26, i++) {
-          impact(x, GROUND - 4, C.org[3], i === mid ? 0.8 : 0.3, true); juice(x, GROUND - 10, 6);
-          burst(x, GROUND - 10, 6, [C.wood[1], C.wood[2], C.wood[3]], 120, 0.6, 400, 'chunk');
-          for (let j = 0; j < 3; j++) fx({ x: x + rand(-8, 8), y: GROUND - 14, vx: rand(-90, 90), vy: -rand(120, 200), grav: 520, life: rand(0.5, 0.8), kind: 'chunk', size: 2, col: pick([C.org[2], C.org[3]]) });
-        }
-      }
-      if (this.hitT > 0.5) { for (let x = this.x0 + 8; x < this.x1; x += 26) burst(x, GROUND - 10, 5, [C.org[2], C.wood[2]], 70, 0.4, 240); return false; }
-    }
-    return !this.dead;
-  }
-  boxes() { return this.hitT >= 0 && this.hitT < 0.2 ? [{ x: this.x0, y: this.y, w: this.x1 - this.x0, h: 20 }] : NONE; }
+  constructor(x0, x1, delay) { this.x0 = x0; this.x1 = x1; this.delay = delay; this.t = 0; this.dodged = false; this.hitT = -1; this.y = -VOFF - 24; this.hy = -VOFF + 14; }   // hy: 매달린 높이 (Rust가 매 프레임 계산)
+  update(dt) { return WK.hzUpdate(this, 'areaSmash', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
+  boxes() { return WK.hzBoxes(this, 'areaSmash'); }
   drawCrates(y, shakeX = 0) {
     const cs = crateSprite();
     for (let x = this.x0; x < this.x1 - 4; x += cs.width) g.drawImage(cs, Math.round(Math.min(x, this.x1 - cs.width) + shakeX), Math.round(y));
@@ -1246,7 +1172,7 @@ class AreaSmash {
         g.fillStyle = blink ? C.yel[3] : C.org[3]; g.fillRect(ex, GROUND - 8, 1, 8); g.fillRect(Math.min(ex, ex + s * 4), GROUND - 9, 4, 1);
       }
       // 매달린 상자 + 밧줄
-      const hy = this.hangY(), sh = fast ? (Math.floor(this.t * 30) % 2 ? 1 : -1) : 0, cs = crateSprite();
+      const hy = this.hy, sh = fast ? (Math.floor(this.t * 30) % 2 ? 1 : -1) : 0, cs = crateSprite();
       g.fillStyle = C.wood[1];
       for (let x = this.x0; x < this.x1 - 4; x += cs.width) { const cx = Math.round(Math.min(x, this.x1 - cs.width)); g.fillRect(cx + 5 + sh, -VOFF, 1, hy + VOFF + 3); g.fillRect(cx + cs.width - 6 + sh, -VOFF, 1, hy + VOFF + 3); }
       this.drawCrates(hy, sh);
@@ -1260,18 +1186,8 @@ class AreaSmash {
 // ── 뭐랭하멘 [해석 레이저]: 가는 빨간 선으로 예고 → 화면을 가로지르는 광선 ──
 class Laser {
   constructor(y, delay, x1, x0 = 0) { this.y = y; this.delay = delay; this.x1 = x1; this.x0 = x0; this.from = x0 > 0 ? x0 : x1; this.t = 0; this.dodged = false; }
-  update(dt) {
-    this.t += dt;
-    if (!this.fired && Math.random() < dt * 30) { const a = rand(0, 6.28), r = rand(14, 26); fx({ x: this.from + Math.cos(a) * r, y: this.y + Math.sin(a) * r, vx: -Math.cos(a) * r * 4, vy: -Math.sin(a) * r * 4, life: 0.25, kind: 'trail', col: C.red[3] }); }
-    if (this.t >= this.delay && !this.fired) {
-      this.fired = true; Sound.sfx.zap(); shake(0.3); flashFx(0.03, '#ffd8c8');
-      fx({ x: this.from, y: this.y, kind: 'flare', size: 14, life: 0.25, col: C.red[3] });
-      for (let x = this.x0 + 10; x < this.x1; x += 18) { spark(x + rand(-4, 4), this.y + rand(-3, 3)); fx({ x, y: this.y, vx: rand(-30, 30), vy: rand(-90, -30), grav: 300, life: rand(0.3, 0.6), kind: 'ember' }); }
-    }
-    if (this.fired && this.t > this.delay + 0.3 * G.speed && !this.after) { this.after = true; fx({ x: this.x0, y: this.y, kind: 'streak', len: Math.round(this.x1 - this.x0), life: 0.18, col: 'rgba(255,200,180,0.45)' }); }
-    return !this.dead && this.t < this.delay + 0.32 * G.speed;
-  }
-  boxes() { return this.fired ? [{ x: this.x0, y: this.y - 4, w: this.x1 - this.x0, h: 8 }] : NONE; }
+  update(dt) { return WK.hzUpdate(this, 'laser', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
+  boxes() { return WK.hzBoxes(this, 'laser'); }
   draw() {
     if (!this.fired) {
       const k = clamp(this.t / this.delay, 0, 1), x0 = this.x0, w = this.x1 - x0, y = this.y, half = Math.round(1 + k * 3), rev = this.from === x0;
@@ -1772,12 +1688,8 @@ function slashSprite(hh) { return SLASH_SPR[hh] || (SLASH_SPR[hh] = WK.slash(hh)
 // 칼바람 베기: 지나갈 높이에 점선이 깔린 뒤 초승달 칼바람이 날아옴 (낮으면 뛰고, 높으면 구르기)
 class SlashWave {
   constructor(x, high, speed, warn, dir = -1) { this.dir = dir; this.x = x; this.high = high; this.y = high ? GROUND - 28 : GROUND - 8; this.speed = speed; this.warn = warn; this.t = 0; this.dodged = false; }
-  update(dt) {
-    this.t += dt;
-    if (this.t >= this.warn) { if (!this.go) { this.go = true; Sound.sfx.whoosh(); } this.x += this.dir * this.speed * dt; if (Math.random() < dt * 40) fx({ x: this.x - this.dir * 6, y: this.y + rand(-8, 8), vx: -this.dir * 40, life: 0.2, kind: 'streak', len: randi(4, 8), col: 'rgba(255,244,224,0.5)' }); }
-    return !this.dead && this.x > -20 && this.x < W + 20;
-  }
-  boxes() { return this.go ? [{ x: this.x - 5, y: this.y - (this.high ? 12 : 8), w: 10, h: this.high ? 24 : 16 }] : NONE; }
+  update(dt) { return WK.hzUpdate(this, 'slashWave', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
+  boxes() { return WK.hzBoxes(this, 'slashWave'); }
   draw() {
     if (!this.go) {
       if (Math.floor(this.t * 10) % 2) return;
@@ -1794,25 +1706,8 @@ class SlashWave {
 const BIG_KNIFE = SPR.BIG_KNIFE;
 class KnifeDrop {   // 도마 난도질: 예고 → 하늘에서 칼날이 번뜩 → 확 빨라지며 내리꽂힘 → 콱! (멈칫 · 섬광 · 땅 갈라짐 · 흙먼지) → 꽂힌 칼이 부르르 떪
   constructor(x, delay) { this.x = Math.round(x); this.delay = delay; this.t = 0; this.y = -VOFF - 34; this.vy = 380; this.st = 'warn'; this.dodged = false; this.cracks = Array.from({ length: 6 }, (_, i) => { const s = i < 3 ? -1 : 1, pts = []; let cx = 0, cy = 0; for (let k = 0; k < 4 + (i % 3); k++) { cx += s * randi(1, 3); cy = clamp(cy + randi(-1, 1), 0, 3); pts.push([cx, cy]); } return pts; }); }
-  update(dt) {
-    this.t += dt;
-    if (this.st === 'warn' && this.t >= this.delay) { this.st = 'fall'; Sound.sfx.whoosh(); }
-    if (this.st === 'fall') {
-      this.vy = Math.min(1600, this.vy + 7000 * dt / G.speed); this.y += this.vy / G.speed * dt;   // 확 빨라지며 내리꽂힘
-      if (this.y >= GROUND - 26) {
-        this.y = GROUND - 26; this.st = 'stuck'; this.sT = 0;
-        Sound.sfx.stab(); shake(0.14); hitstop(0.03, 0.25);
-        fx({ x: this.x, y: GROUND - 3, kind: 'flare', size: 11, life: 0.12, col: '#fff4e0' }); fx({ x: this.x, y: GROUND - 1, kind: 'ring', big: true, life: 0.28, col: '#fff4e0' });
-        dust(this.x, GROUND, 4, 0, 1);
-        for (let i = 0; i < 9; i++) fx({ x: this.x + rand(-3, 3), y: GROUND - 2, vx: rand(-110, 110), vy: -rand(60, 170), grav: 420, life: rand(0.35, 0.6), kind: 'chunk', size: randi(1, 2), col: pick([C.stone[2], C.stone[3], C.soil[3], C.soil[2]]) });
-        for (const sd of [-1, 1]) fx({ x: this.x + sd * 4, y: GROUND - 2, vx: sd * rand(140, 190), vy: -rand(10, 30), drag: 6, life: 0.22, kind: 'streak', len: 4, col: 'rgba(255,244,224,0.8)' });   // 옆으로 튀는 충격선
-        light(this.x, GROUND - 6, 22, '#fff4e0', 0.8);
-      }
-    }
-    if (this.st === 'stuck') { this.sT += dt; if (this.sT > 0.6 * G.speed) { burst(this.x, GROUND - 14, 6, [C.stone[3], '#dcdcd4'], 60, 0.4, 300, 'chunk'); return false; } }
-    return !this.dead;
-  }
-  boxes() { return this.st === 'fall' || (this.st === 'stuck' && this.sT < 0.1) ? [{ x: this.x - 4, y: this.st === 'fall' ? this.y : GROUND - 26, w: 8, h: this.st === 'fall' ? 34 : 26 }] : NONE; }
+  update(dt) { return WK.hzUpdate(this, 'knifeDrop', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
+  boxes() { return WK.hzBoxes(this, 'knifeDrop'); }
   drawDecal() {
     if (this.st === 'stuck') {   // 꽂힌 자리 땅 갈라짐 (칼이 사라지며 함께 옅어짐)
       const a = clamp(1 - (this.sT / G.speed - 0.35) / 0.25, 0, 1); if (a <= 0) return;
@@ -1850,17 +1745,8 @@ const WATER = ['#2e5a7a', '#4a86a8', '#7ab4cc', '#bfe0ea', '#f2fbff'].map(c => m
 const FALL_TILE = SPR.FALL_TILE;
 class WaterFall {
   constructor(x, delay) { this.x = Math.round(x); this.delay = delay; this.t = 0; this.dodged = false; this.dur = 0.32 * G.speed; }
-  update(dt) {
-    this.t += dt;
-    if (this.t < this.delay) { if (Math.random() < dt * (8 + 30 * this.t / this.delay)) fx({ x: this.x + rand(-4, 4), y: -VOFF + 36, vy: rand(160, 240), grav: 300, life: (GROUND + VOFF - 36) / 220, kind: 'px', col: pick([WATER[2], WATER[3]]) }); return true; }
-    if (!this.poured) {
-      this.poured = true; Sound.sfx.splash(); shake(0.15);
-      splashFx(this.x, 1.6); fx({ x: this.x, y: GROUND - 1, kind: 'ring', big: true, life: 0.35, col: WATER[3] });
-      for (const d of [-1, 1]) { const r = new Ripple(this.x + d * 10, d, (105 + G.tier * 5) * evK()); r.pat = this.pat; spawnHz(r); }
-    }
-    return !this.dead && this.t < this.delay + this.dur;
-  }
-  boxes() { if (!this.poured) return NONE; const k = (this.t - this.delay) / this.dur, hw = Math.min(8, Math.max(2, Math.round(9 * (k < 0.7 ? 1 : (1 - k) / 0.3)))); return [{ x: this.x - hw, y: -VOFF + 36, w: hw * 2, h: GROUND + VOFF - 36 }]; }   // 끝날 때 가늘어지는 물줄기만큼만
+  update(dt) { return WK.hzUpdate(this, 'waterFall', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
+  boxes() { return WK.hzBoxes(this, 'waterFall'); }
   drawDecal() {
     if (this.t >= this.delay) return;
     const k = this.t / this.delay, w = Math.round(8 + 10 * k);
@@ -1888,8 +1774,8 @@ class WaterFall {
 }
 class Ripple { // 땅을 타고 퍼지는 낮은 물결 (높이 10)
   constructor(x, dir, speed) { this.x = x; this.dir = dir; this.speed = speed; this.t = 0; this.dodged = false; }
-  update(dt) { this.t += dt; this.x += this.dir * this.speed * dt; if (Math.random() < dt * 25) fx({ x: this.x, y: GROUND - 8, vx: this.dir * 30, vy: -rand(40, 80), grav: 400, life: 0.35, kind: 'px', col: WATER[4] }); return !this.dead && this.x > -20 && this.x < W + 20; }
-  boxes() { return this.t < 0.3 * G.speed ? NONE : [{ x: this.x - 5, y: GROUND - 10, w: 10, h: 10 }]; }   // 생기고 0.3초 뒤부터 (뛸 틈)
+  update(dt) { return WK.hzUpdate(this, 'ripple', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
+  boxes() { return WK.hzBoxes(this, 'ripple'); }
   draw() {
     for (let k = 0; k < 16; k++) {
       const hh = Math.round(k < 2 ? 10 * (k + 1) / 3 : 10 * Math.exp(-(k - 2) / 4.5)); if (hh < 1) continue;
@@ -1904,15 +1790,8 @@ function oreumSprite(H) { return OREUM_SPR[H] || (OREUM_SPR[H] = WK.oreum(H)); }
 // 오름 솟기: 땅이 부풀고 갈라진 뒤 풀 덮인 오름이 불쑥 솟았다 가라앉음
 class OreumRise {
   constructor(x, delay, H) { this.x = Math.round(x); this.delay = delay; this.H = H; this.t = 0; this.h = 0; this.dodged = false; this.w = 14; }
-  update(dt) {
-    this.t += dt;
-    const u = (this.t - this.delay) / G.speed;
-    if (u < 0) { if (Math.random() < dt * 20) fx({ x: this.x + rand(-10, 10), y: GROUND - 1, vx: rand(-15, 15), vy: -rand(30, 70), grav: 400, life: 0.3, kind: 'chunk', size: 1, col: pick([C.soil[3], C.leaf[2]]) }); return true; }
-    if (!this.up) { this.up = true; Sound.sfx.rise(); Sound.sfx.thud(); shake(0.13); dust(this.x - 12, GROUND, 4, -1, 1); dust(this.x + 12, GROUND, 4, 1, 1); burst(this.x, GROUND - 6, 14, [C.soil[2], C.soil[3], C.leaf[2], C.leaf[3]], 140, 0.6, 420, 'chunk'); fx({ x: this.x, y: GROUND - 1, kind: 'ring', big: true, life: 0.35, col: C.leaf[3] }); fx({ x: this.x, y: GROUND - 4, kind: 'flare', size: 10, life: 0.14, col: '#fff4e0' }); for (let i = 0; i < 5; i++) fx({ x: this.x + rand(-10, 10), y: GROUND - 8, vx: rand(-70, 70), vy: -rand(120, 200), grav: 480, life: rand(0.5, 0.8), kind: 'chunk', size: 2, col: pick([C.leaf[3], C.leaf[2]]) }); }   // 땅을 뚫는 순간: 쿵 · 흙과 풀 덩이가 튀고 충격 고리
-    this.h = u < 0.08 ? this.H * 1.12 * u / 0.08 : u < 0.14 ? this.H * (1.12 - 0.12 * (u - 0.08) / 0.06) : u < 0.6 ? this.H : this.H * Math.max(0, 1 - (u - 0.6) / 0.3);   // 확 솟았다가 살짝 내려앉음
-    return u < 0.9 && !this.dead;
-  }
-  boxes() { return this.h > 8 ? [{ x: this.x - 9, y: GROUND - this.h * 0.85, w: 18, h: this.h * 0.85 }] : NONE; }   // 비탈 끝에서 보이지 않는 모서리에 걸리지 않게
+  update(dt) { return WK.hzUpdate(this, 'oreumRise', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
+  boxes() { return WK.hzBoxes(this, 'oreumRise'); }
   drawDecal() {
     if (this.up) return;
     const k = clamp(this.t / this.delay, 0, 1), r = Math.round(6 + 8 * k);
@@ -1931,8 +1810,8 @@ class OreumRise {
 // 설문대 파도: 치마폭에서 일어난 큰 물결이 굴러옴 (낮으면 뛰어넘기, 높으면 구르기로 밑을 빠져나감 — 높은 파도는 바닥이 비어 있음)
 class TideWave {
   constructor(x, dir, speed, high, warn) { this.x = x; this.dir = dir; this.speed = speed; this.high = high; this.warn = warn; this.t = 0; this.dodged = false; }
-  update(dt) { this.t += dt; if (this.t < this.warn) return true; if (!this.go) { this.go = true; Sound.sfx.wave(); } this.x += this.dir * this.speed * dt; if (Math.random() < dt * 30) fx({ x: this.x, y: (this.high ? GROUND - 34 : GROUND - 16) + rand(-3, 3), vx: this.dir * 40, vy: -rand(30, 70), grav: 300, life: 0.4, kind: 'px', col: WATER[4] }); return !this.dead && this.x > -30 && this.x < W + 30; }
-  boxes() { return !this.go ? NONE : this.high ? [{ x: this.x - 6, y: GROUND - 42, w: 12, h: 26 }] : [{ x: this.x - 6, y: GROUND - 16, w: 12, h: 16 }]; }
+  update(dt) { return WK.hzUpdate(this, 'tideWave', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
+  boxes() { return WK.hzBoxes(this, 'tideWave'); }
   draw() {
     if (!this.go) {   // 예고: 지나갈 높이에 물빛 점선
       if (Math.floor(this.t * 10) % 2) return;
@@ -2012,8 +1891,8 @@ class PatSeolmun extends PatEvent {
 // 칼 든 하르방이 착지할 자리: 그림자가 짙어지다가 착지 순간만 판정
 class HopLand {
   constructor(x, w, T) { this.x = x; this.w = w; this.T = T; this.t = 0; this.dodged = false; }
-  update(dt) { this.t += dt; return this.t < this.T + 0.12 * G.speed; }
-  boxes() { return this.t >= this.T ? [{ x: this.x - this.w / 2, y: GROUND - 70, w: this.w, h: 70 }] : NONE; }
+  update(dt) { return WK.hzUpdate(this, 'hopLand', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
+  boxes() { return WK.hzBoxes(this, 'hopLand'); }
   drawDecal() { const k = clamp(this.t / this.T, 0, 1), w = Math.round(this.w * (0.4 + 0.6 * k)); g.fillStyle = `rgba(30,16,14,${0.15 + 0.45 * k})`; g.fillRect(Math.round(this.x - w / 2), GROUND, w, 2); g.fillRect(Math.round(this.x - w / 2) + 3, GROUND - 1, w - 6, 1); if (k > 0.5 && Math.floor(this.t * 16) % 2) { g.fillStyle = C.red[3]; g.fillRect(Math.round(this.x - this.w / 2), GROUND + 2, 2, 1); g.fillRect(Math.round(this.x + this.w / 2) - 2, GROUND + 2, 2, 1); } }
   draw() {}
 }
