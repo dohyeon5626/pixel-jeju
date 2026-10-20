@@ -10,11 +10,11 @@
 let WK = null;
 const GAME_SCRIPTS = ['chars', 'portraits', 'boss', 'scenery', 'audio', 'game'];
 (async () => {
-  const url = 'wasm/jeju.wasm?v=279', imports = { m: { jsin: Math.sin, jcos: Math.cos, jasin: Math.asin, jexp: Math.exp, jpow: Math.pow, jatan2: Math.atan2, jhypot2: Math.hypot, jhypot3: Math.hypot }, g: gameImports() };
+  const url = 'wasm/jeju.wasm?v=280', imports = { m: { jsin: Math.sin, jcos: Math.cos, jasin: Math.asin, jexp: Math.exp, jpow: Math.pow, jatan2: Math.atan2, jhypot2: Math.hypot, jhypot3: Math.hypot }, g: gameImports() };
   try {
     let inst;
     if (location.protocol === 'file:') {   // file://에선 fetch가 막혀서 base64 사본(wasm/jeju-wasm.js)을 스크립트로 읽음
-      await new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'wasm/jeju-wasm.js?v=279'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+      await new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'wasm/jeju-wasm.js?v=280'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
       inst = (await WebAssembly.instantiate(Uint8Array.from(atob(window.JEJU_WASM), c => c.charCodeAt(0)), imports)).instance;
     } else {
       try { inst = (await WebAssembly.instantiateStreaming(fetch(url), imports)).instance; }
@@ -22,7 +22,7 @@ const GAME_SCRIPTS = ['chars', 'portraits', 'boss', 'scenery', 'audio', 'game'];
     }
     WK = wkApi(inst.exports);
   } catch (e) { console.error('WASM을 불러오지 못함', e); wasmMissing(); return; }
-  for (const n of GAME_SCRIPTS) { const s = document.createElement('script'); s.src = `js/${n}.js?v=279`; s.async = false; document.body.appendChild(s); }   // async = false: 붙인 순서대로 실행
+  for (const n of GAME_SCRIPTS) { const s = document.createElement('script'); s.src = `js/${n}.js?v=280`; s.async = false; document.body.appendChild(s); }   // async = false: 붙인 순서대로 실행
 })();
 // WASM 없이는 배경 · 물리가 없어 시작할 수 없음 (아주 오래된 브라우저 등)
 function wasmMissing() {
@@ -35,7 +35,9 @@ function wasmMissing() {
 // 게임 규칙(장애물)이 부르는 효과 · 난수: 게임 함수(fx · burst …)를 그 자리에서 바로 불러 원래와 같은 순서로
 //  색 번호: 0 이상은 0xRRGGBB, 음수는 팔레트 C[이름][칸] (이름표는 Rust game.rs가 줌)
 let HZ = null;
-const hzCol = c => c >= 0 ? '#' + (c | 0).toString(16).padStart(6, '0') : C[HZ.pals[(-c - 1) >> 4]][(-c - 1) & 15];
+const hex6 = c => '#' + (c & 0xffffff).toString(16).padStart(6, '0');
+// 색 번호: 0 이상 0xRRGGBB (0x1000000이 붙으면 mute) · -1 ~ -999 팔레트 C[이름][칸] · -1000부터 CSS 목록
+const hzCol = c => c >= 0x1000000 ? mute(hex6(c)) : c >= 0 ? hex6(c) : c > -1000 ? C[HZ.pals[(-c - 1) >> 4]][(-c - 1) & 15] : HZ.css[-c - 1000];
 function gameImports() {
   return {
     jrand: () => Math.random(),
@@ -50,6 +52,7 @@ function gameImports() {
     jhitstop: (t, cd) => hitstop(t, cd),
     jreward: (k, x, y) => reward(HZ.rewards[k], x, y),
     jdecal: (x, life) => G.decals.push({ x, t: 0, life }),
+    jhook: (id, a, b, c, d) => HZ.hook(id, a, b, c, d),
   };
 }
 
@@ -93,6 +96,25 @@ function wkApi(ex) {
   const hzView = n => new Float64Array(ex.memory.buffer, hzBuf, n);
   const pack = (h, K) => { const f = hzView(K.length); K.forEach(([n, t], i) => { const v = h[n]; f[i] = t === 'n' ? (v ?? NaN) : t === 'b' ? (v ? 1 : 0) : t.indexOf(v); }); };
   const unpack = (h, K) => { const f = hzView(K.length); K.forEach(([n, t], i) => { const v = f[i]; if (t === 'n') { if (!Number.isNaN(v)) h[n] = v; } else h[n] = t === 'b' ? v !== 0 : t[v]; }); };
+  // 지금 판의 값 (game.rs Ctx 순서)
+  const setCtx = () => { const c = new Float64Array(ex.memory.buffer, ex.hz_ctx(), 8); c[0] = W; c[1] = P.x; c[2] = P.y; c[3] = P.dead ? 1 : 0; c[4] = G.arenaL; c[5] = G.arenaR; c[6] = G.speed; c[7] = G.magnetT || 0; };
+  // Rust가 부르는 JS 일 (game.rs HOOKS): 부르기 전에 지금 객체를 최신 값으로 맞춰 둠
+  let cur = null;
+  const HOOK = {
+    daily: s => daily(HZ.strs[s]),
+    popup: (s, x, y, col) => popup(HZ.strs[s], x, y, hzCol(col), 's'),
+    tang: (x, y, vx, vy) => G.pickups.push(new Pickup('tang', x, y, vx, vy)),
+    splash: (x, big) => splashFx(x, big),
+    ghost: (x, y, life, col) => G.ghosts.push({ img: cur.h.frame(), x, y, life, col: hzCol(col) }),
+    glyphs: (x, y) => graphemes(cur.h.text.replace(/\s/g, '')).forEach((ch, i) => fx({ x: x + 6 + i * 9, y: y + 4, vx: rand(-60, 60), vy: rand(-140, -60), grav: 420, life: 0.8, kind: 'glyph', ch })),
+    split: () => cur.h.split(),
+    kick: (dx, dy) => kick(dx, dy),
+    duck: t => Sound.duck(t),
+    mean: (x, y) => popup('= ' + cur.h.mean, x, y, C.yel[2], 's'),
+  };
+  const hooks = HZ.hooks.map(n => HOOK[n]);
+  HZ.hook = (id, a, b, c, d) => { unpack(cur.h, cur.K); hooks[id](a, b, c, d); };
+  const call = (h, kind, fn) => { const K = HZ.kinds[kind]; pack(h, K); setCtx(); cur = { h, K }; const r = fn(kindIdx[kind], K.length); cur = null; unpack(h, K); return r !== 0; };
   let vortexSet = false;
   const vortexPal = () => { if (vortexSet) return; vortexSet = true; [Vortex.PAL, Vortex.DUST, Vortex.CLOUD].forEach((c, k) => run([rgbs(c)], p => ex.set_pal(k, p, c.length))); };
   return {
@@ -113,14 +135,14 @@ function wkApi(ex) {
       const n = ex.music_step(s, tempo, calm ? 1 : 0, hip ? 1 : 0, key, varied ? 1 : 0, accent ? 1 : 0, hipVar), b = new Float64Array(ex.memory.buffer, ex.music_buf(), n * 9);
       for (let i = 0; i < n; i++) play(...b.subarray(i * 9, i * 9 + 9));
     },
-    // 장애물 한 스텝 (살아 있으면 true) · 판정 상자 [{ x, y, w, h }] · 맞았을 때 (ev: 'shot' 귤 · 'stomp' 밟힘)
-    hzUpdate(h, kind, dt) { const K = HZ.kinds[kind]; pack(h, K); const r = ex.hz_update(kindIdx[kind], hzBuf, K.length, dt, W, P.x); unpack(h, K); return r !== 0; },
+    // 장애물 한 스텝 (살아 있으면 true) · 판정 상자 [{ x, y, w, h }] · 맞았을 때 (ev: 'shot' 귤 · 'stomp' 밟힘 · 'bounce' 밟고 튀어 오름)
+    hzUpdate(h, kind, dt) { return call(h, kind, (k, n) => ex.hz_update(k, hzBuf, n, dt)); },
     hzBoxes(h, kind) {
       const K = HZ.kinds[kind]; pack(h, K); const n = ex.hz_boxes(kindIdx[kind], hzBuf, K.length, boxBuf); if (!n) return NONE;
       const b = new Float64Array(ex.memory.buffer, boxBuf, n * 4), out = []; for (let i = 0; i < n; i++) out.push({ x: b[i * 4], y: b[i * 4 + 1], w: b[i * 4 + 2], h: b[i * 4 + 3] });
       return out;
     },
-    hzOn(h, kind, ev, sx = 0, sy = 0) { const K = HZ.kinds[kind]; pack(h, K); const r = ex.hz_on(kindIdx[kind], hzBuf, K.length, HZ.events.indexOf(ev), sx, sy, W, P.x); unpack(h, K); return r !== 0; },
+    hzOn(h, kind, ev, sx = 0, sy = 0) { return call(h, kind, (k, n) => ex.hz_on(k, hzBuf, n, HZ.events.indexOf(ev), sx, sy)); },
     // 회오리 깔때기 한 장 (초당 30번)
     funnel(d, cw, chh, ox, oy, x, t, sp, dir, big, form, low, full) { vortexPal(); run([d.length], p => { ex.funnel(p, cw, chh, ox, oy, x, t, sp, dir, big ? 1 : 0, form, low, full); d.set(u8(p, d.length)); }); },
     // 파티클: 한 칸 8개 [x, y, vx, vy, life, grav, drag, 종류]로 묶어 한 번에 · 땅에 닿은 빗방울(종류 5)은 JS가 물방울을 튀김

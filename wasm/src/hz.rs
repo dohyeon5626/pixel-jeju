@@ -1,6 +1,8 @@
 // 장애물 종류 목록: 이름 · 필드 목록 · 움직임 · 판정 상자 · 맞았을 때 (js/wasm.js가 이름으로 번호를 찾음)
 use crate::game::{Boxes, Schema};
+use crate::hz_air::*;
 use crate::hz_ground::*;
+use crate::hz_item::*;
 
 type Update = fn(&mut [f64], f64) -> bool;
 type BoxFn = fn(&[f64]) -> Boxes;
@@ -20,9 +22,27 @@ pub const KINDS: &[Kind] = &[
     Kind { name: "pony", schema: pony::SCHEMA, update: pony::update, boxes: pony::boxes, on: Some(pony::on) },
     Kind { name: "pebble", schema: pebble::SCHEMA, update: pebble::update, boxes: pebble::boxes, on: Some(pebble::on) },
     Kind { name: "tewak", schema: tewak::SCHEMA, update: tewak::update, boxes: tewak::boxes, on: Some(tewak::on) },
+    Kind { name: "suitcase", schema: suitcase::SCHEMA, update: suitcase::update, boxes: suitcase::boxes, on: Some(suitcase::on) },
+    Kind { name: "pig", schema: pig::SCHEMA, update: pig::update, boxes: pig::boxes, on: Some(pig::on) },
+    Kind { name: "rentcar", schema: rentcar::SCHEMA, update: rentcar::update, boxes: rentcar::boxes, on: Some(rentcar::on) },
+    Kind { name: "bubble", schema: bubble::SCHEMA, update: bubble::update, boxes: bubble::boxes, on: Some(bubble::on) },
+    Kind { name: "rotten", schema: rotten::SCHEMA, update: rotten::update, boxes: rotten::boxes, on: Some(rotten::on) },
+    Kind { name: "zap", schema: zap::SCHEMA, update: zap::update, boxes: zap::boxes, on: Some(zap::on) },
+    Kind { name: "splitZap", schema: split_zap::SCHEMA, update: split_zap::update, boxes: zap::boxes, on: Some(split_zap::on) },
+    Kind { name: "gull", schema: gull::SCHEMA, update: gull::update, boxes: gull::boxes, on: Some(gull::on) },
+    Kind { name: "bee", schema: bee::SCHEMA, update: bee::update, boxes: bee::boxes, on: Some(bee::on) },
+    Kind { name: "plane", schema: plane::SCHEMA, update: plane::update, boxes: plane::boxes, on: Some(plane::on) },
+    Kind { name: "parcel", schema: parcel::SCHEMA, update: parcel::update, boxes: parcel::boxes, on: Some(parcel::on) },
+    Kind { name: "glider", schema: glider::SCHEMA, update: glider::update, boxes: glider::boxes, on: Some(glider::on) },
+    Kind { name: "dolphin", schema: dolphin::SCHEMA, update: dolphin::update, boxes: dolphin::boxes, on: Some(dolphin::on) },
+    Kind { name: "crow", schema: crow::SCHEMA, update: crow::update, boxes: crow::boxes, on: Some(crow::on) },
+    Kind { name: "dialect", schema: dialect::SCHEMA, update: dialect::update, boxes: dialect::boxes, on: Some(dialect::on) },
+    Kind { name: "pickup", schema: pickup::SCHEMA, update: pickup::update, boxes: no_boxes, on: None },
+    Kind { name: "shot", schema: shot::SCHEMA, update: shot::update, boxes: no_boxes, on: None },
+    Kind { name: "answer", schema: answer::SCHEMA, update: answer::update, boxes: no_boxes, on: None },
 ];
-// 맞았을 때 종류 (EV_SHOT · EV_STOMP 순서)
-pub const EVENTS: [&str; 2] = ["shot", "stomp"];
+// 맞았을 때 종류 (game.rs EV_* 순서)
+pub const EVENTS: [&str; 3] = ["shot", "stomp", "bounce"];
 
 pub fn tables_json() -> String {
     let kinds: Vec<(&str, Schema)> = KINDS.iter().map(|k| (k.name, k.schema)).collect();

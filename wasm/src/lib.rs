@@ -13,7 +13,9 @@ mod funnel;
 mod fx;
 mod game;
 mod hz;
+mod hz_air;
 mod hz_ground;
+mod hz_item;
 mod js;
 mod music;
 mod noise;
@@ -259,10 +261,14 @@ pub extern "C" fn hz_tables() -> *const u8 {
 pub extern "C" fn hz_tables_len() -> usize {
     unsafe { (*std::ptr::addr_of!(TABLES)).len() }
 }
+// 지금 판의 값을 JS가 써 넣는 자리 (game::Ctx 순서로 f64 CTX_LEN칸)
+#[no_mangle]
+pub extern "C" fn hz_ctx() -> *mut f64 {
+    game::ctx_buf()
+}
 // 장애물 한 스텝: f는 필드 목록대로 담은 값 (제자리에서 고침) · 살아 있으면 1
 #[no_mangle]
-pub unsafe extern "C" fn hz_update(kind: usize, f: *mut f64, n: usize, dt: f64, w: f64, px: f64) -> i32 {
-    game::set_ctx(w, px);
+pub unsafe extern "C" fn hz_update(kind: usize, f: *mut f64, n: usize, dt: f64) -> i32 {
     (hz::KINDS[kind].update)(from_raw_parts_mut(f, n), dt) as i32
 }
 // 판정 상자: out에 4칸씩 · 상자 수
@@ -275,9 +281,8 @@ pub unsafe extern "C" fn hz_boxes(kind: usize, f: *const f64, n: usize, out: *mu
     }
     b.len()
 }
-// 맞았을 때 (ev: 0 귤 · 1 밟힘, sx · sy: 맞은 귤 자리) · 귤이 사라지면 1
+// 맞았을 때 (ev: 0 귤 · 1 밟힘 · 2 밟고 튀어 오름, sx · sy: 맞은 귤 자리) · 귤이 사라지면(튀어 오르면 점수가 나면) 1
 #[no_mangle]
-pub unsafe extern "C" fn hz_on(kind: usize, f: *mut f64, n: usize, ev: i32, sx: f64, sy: f64, w: f64, px: f64) -> i32 {
-    game::set_ctx(w, px);
+pub unsafe extern "C" fn hz_on(kind: usize, f: *mut f64, n: usize, ev: i32, sx: f64, sy: f64) -> i32 {
     hz::KINDS[kind].on.map(|on| on(from_raw_parts_mut(f, n), ev, sx, sy) as i32).unwrap_or(0)
 }

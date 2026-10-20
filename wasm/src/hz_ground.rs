@@ -1,10 +1,7 @@
-// 땅 · 화면 끝에서 오는 기본 장애물 (원래 game.js): 솟는 돌하르방 · 꼬마 하르방 · 화산탄/낙석 · 조랑말 · 날아오는 돌 · 테왁
+// 땅 · 화면 끝에서 오는 장애물 (원래 game.js): 솟는 돌하르방 · 꼬마 하르방 · 화산탄/낙석 · 조랑말 · 날아오는 돌 · 테왁 · 캐리어 · 똥돼지 · 렌터카
 //  모듈마다 필드 목록(SCHEMA) · 움직임(update → 살아 있으면 true) · 판정 상자(boxes) · 맞았을 때(on)
 use crate::game::*;
 use crate::js::*;
-
-// 맞았을 때 종류 (hz.rs EVENTS 순서: 0 귤에 맞음 · 1 밟힘)
-pub const EV_STOMP: i32 = 1;
 
 // ── 땅에서 솟는 돌하르방 (부술 수 없음) ──
 pub mod rise {
@@ -427,6 +424,174 @@ pub mod tewak {
         f[DEAD] = 1.0;
         burst(f[X], f[Y] - 6.0, 10.0, &[pc("org", 2), pc("org", 3), hexc(0xffffff)], 70.0, 0.4, 260.0, "px");
         reward("shatter", f[X], f[Y] - 14.0);
+        true
+    }
+}
+
+// ── ᄒᆞᆫ저옵서예~: 관광객 캐리어 (밟으면 뚜껑이 열리며 짐이 와르르) ──
+pub mod suitcase {
+    use super::*;
+    pub const SCHEMA: Schema = &[
+        ("dir", Ty::Num),
+        ("x", Ty::Num),
+        ("y", Ty::Num),
+        ("vy", Ty::Num),
+        ("speed", Ty::Num),
+        ("hop", Ty::Bool),
+        ("rot", Ty::Num),
+        ("sw", Ty::Num),
+        ("sh", Ty::Num),
+        ("dead", Ty::Bool),
+    ];
+    const DIR: usize = 0;
+    const X: usize = 1;
+    const Y: usize = 2;
+    const VY: usize = 3;
+    const SPEED: usize = 4;
+    const HOP: usize = 5;
+    const ROT: usize = 6;
+    const SW: usize = 7;
+    const SH: usize = 8;
+    const DEAD: usize = 9;
+    pub fn update(f: &mut [f64], dt: f64) -> bool {
+        let w = ctx().w;
+        let dir = f[DIR];
+        f[X] += dir * f[SPEED] * dt;
+        f[ROT] += dt * 18.0;
+        if f[HOP] != 0.0 {
+            f[VY] += 700.0 * dt;
+            f[Y] += f[VY] * dt;
+            if f[Y] >= GROUND {
+                f[Y] = GROUND;
+                f[VY] = -f[VY].abs() * 0.22;
+                if f[VY].abs() < 25.0 {
+                    f[VY] = 0.0;
+                    f[HOP] = 0.0;
+                }
+                dust(f[X], GROUND, 2.0, 0.0, 0.0);
+            }
+        }
+        if f[X] > -10.0 && f[X] < w + 10.0 && random() < dt * 10.0 {
+            Fx { vx: -dir * 20.0, vy: -10.0, life: 0.25, size: 1.0, ..Fx::new("puff", f[X] - dir * 6.0, GROUND) }.emit();
+        }
+        f[DEAD] == 0.0 && if dir > 0.0 { f[X] < w + 30.0 } else { f[X] > -30.0 }
+    }
+    pub fn boxes(f: &[f64]) -> Boxes {
+        vec![[f[X] - f[SW] / 2.0 + 2.0, f[Y] - f[SH] + 6.0, f[SW] - 4.0, f[SH] - 7.0]]
+    }
+    pub fn on(f: &mut [f64], ev: i32, _sx: f64, _sy: f64) -> bool {
+        f[DEAD] = 1.0;
+        let cols = [muted(0xf4f0e0), muted(0xe87a9a), muted(0x4aa3ec), muted(0xf2c84a)];
+        burst(f[X], f[Y] - 10.0, 16.0, &cols, 110.0, 0.6, 360.0, "chunk");
+        sfx("shatter");
+        reward(if ev == EV_STOMP { "stompKill" } else { "shatter" }, f[X], f[Y] - 20.0);
+        true
+    }
+}
+
+// ── 똥돼지 질주: 가까워지면 펄쩍 · 밟으면 등을 디딤돌 삼아 튀어 오름 ──
+pub mod pig {
+    use super::*;
+    pub const SCHEMA: Schema = &[
+        ("dir", Ty::Num),
+        ("x", Ty::Num),
+        ("y", Ty::Num),
+        ("vy", Ty::Num),
+        ("speed", Ty::Num),
+        ("anim", Ty::Num),
+        ("leap", Ty::Bool),
+        ("leaped", Ty::Bool),
+        ("squash", Ty::Num),
+        ("dead", Ty::Bool),
+    ];
+    const DIR: usize = 0;
+    const X: usize = 1;
+    const Y: usize = 2;
+    const VY: usize = 3;
+    const SPEED: usize = 4;
+    const ANIM: usize = 5;
+    const LEAP: usize = 6;
+    const LEAPED: usize = 7;
+    const SQUASH: usize = 8;
+    const DEAD: usize = 9;
+    pub fn update(f: &mut [f64], dt: f64) -> bool {
+        let c = ctx();
+        let dir = f[DIR];
+        f[X] += dir * f[SPEED] * dt;
+        f[ANIM] += dt * f[SPEED] / 12.0;
+        if f[LEAP] != 0.0 && f[LEAPED] == 0.0 && (f[X] - c.px).abs() < 130.0 {
+            f[LEAPED] = 1.0;
+            f[VY] = -230.0;
+            sfx("oink");
+            dust(f[X], GROUND, 4.0, 0.0, 1.0);
+            Fx { size: 5.0, life: 0.15, col: pc("yel", 3), ..Fx::new("flare", f[X], GROUND - 18.0) }.emit();
+        }
+        if f[Y] < GROUND || f[VY] < 0.0 {
+            f[VY] += 760.0 * dt;
+            f[Y] += f[VY] * dt;
+            if f[Y] >= GROUND {
+                f[Y] = GROUND;
+                f[VY] = 0.0;
+                dust(f[X], GROUND, 3.0, 0.0, 0.0);
+            }
+        }
+        if f[X] > -10.0 && f[X] < c.w + 10.0 && random() < dt * 18.0 {
+            dust(f[X] - dir * 10.0, GROUND, 1.0, -dir, 0.0);
+        }
+        f[DEAD] == 0.0 && if dir > 0.0 { f[X] < c.w + 30.0 } else { f[X] > -30.0 }
+    }
+    pub fn boxes(f: &[f64]) -> Boxes {
+        vec![[f[X] - 11.0, f[Y] - 14.0, 22.0, 12.0]]
+    }
+    pub fn on(f: &mut [f64], ev: i32, sx: f64, sy: f64) -> bool {
+        if ev == EV_BOUNCE {
+            sfx("oink");
+            f[SQUASH] = 0.15;
+        } else {
+            spark(sx, sy);
+            sfx("oink");
+        }
+        true
+    }
+}
+
+// ── 렌터카 대행진: 숨비 가까이서 빵! ──
+pub mod rentcar {
+    use super::*;
+    pub const SCHEMA: Schema = &[("dir", Ty::Num), ("x", Ty::Num), ("speed", Ty::Num), ("honk", Ty::Bool), ("t", Ty::Num)];
+    const DIR: usize = 0;
+    const X: usize = 1;
+    const SPEED: usize = 2;
+    const HONK: usize = 3;
+    const T: usize = 4;
+    pub fn update(f: &mut [f64], dt: f64) -> bool {
+        let c = ctx();
+        let dir = f[DIR];
+        f[T] += dt;
+        f[X] += dir * f[SPEED] * dt;
+        if f[HONK] == 0.0 && f[X] > 12.0 && f[X] < c.w - 12.0 && (f[X] - c.px).abs() < 120.0 {
+            f[HONK] = 1.0;
+            sfx("honk");
+            for i in 0..3 {
+                let y = GROUND - 10.0 + (i - 1) as f64 * 3.0;
+                Fx { vx: dir * 120.0, life: 0.12, len: 4.0, col: pc("yel", 3), ..Fx::new("streak", f[X] + dir * 18.0, y) }.emit();
+            }
+        }
+        if f[X] > -10.0 && f[X] < c.w + 10.0 && random() < dt * 20.0 {
+            Fx { vx: -dir * 30.0, vy: -8.0, life: 0.4, size: 1.0, ..Fx::new("puff", f[X] - dir * 16.0, GROUND - 3.0) }.emit();
+        }
+        if dir > 0.0 {
+            f[X] < c.w + 40.0
+        } else {
+            f[X] > -40.0
+        }
+    }
+    pub fn boxes(f: &[f64]) -> Boxes {
+        vec![[f[X] - 14.0, GROUND - 15.0, 28.0, 14.0]]
+    }
+    pub fn on(_f: &mut [f64], _ev: i32, sx: f64, sy: f64) -> bool {
+        spark(sx, sy);
+        sfx("tink");
         true
     }
 }

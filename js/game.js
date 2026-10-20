@@ -524,30 +524,9 @@ class Bubble { // 사투리 말풍선 (귤로 맞히면 글자가 와르르)
     this.laneY = opt.lane !== undefined ? opt.lane - this.bodyH : null; this.bounces = opt.bounces || 0;
     this.hp = this.kind === 'big' ? 4 : 1; this.age = 0; this.dodged = false; this.flash = 0;
   }
-  update(dt) {
-    this.age += dt; this.flash -= dt;
-    this.x += this.vx * dt;
-    if (this.laneY !== null) this.y = lerp(this.y, this.laneY, 1 - Math.pow(0.0004, dt));
-    else {
-      this.vy += this.grav * dt; this.y += this.vy * dt;
-      if (this.y + this.bodyH >= GROUND) {
-        this.y = GROUND - this.bodyH;
-        if (this.bounces-- > 0) { this.vy = -Math.abs(this.vy) * 0.55; dust(this.x + this.w / 2, GROUND, 3); } else { this.vy = 0; this.grav = 0; }
-      }
-    }
-    if (this.kind === 'big' && Math.random() < dt * 14) fx({ x: this.dir < 0 ? this.x + this.w : this.x, y: this.y + rand(2, this.bodyH - 2), vx: -this.dir * 30, life: 0.3, col: C.yel[3] });
-    return !this.dead && this.x > -this.w - 10 && this.x < W + 10;
-  }
-  boxes() { if (this.age < 0.14 || (this.laneY !== null && Math.abs(this.y - this.laneY) > 3)) return NONE; return [{ x: this.x + 3, y: this.y + 5, w: this.w - 6, h: this.bodyH - 9 }]; }
-  onShot() {
-    this.hp--; this.flash = 0.08;
-    if (this.hp > 0) { Sound.sfx.hit(); spark(this.x + 4, this.y + this.bodyH / 2); return true; }
-    this.dead = true; Sound.sfx.shatter();
-    graphemes(this.text.replace(/\s/g, '')).forEach((ch, i) => fx({ x: this.x + 6 + i * 9, y: this.y + 4, vx: rand(-60, 60), vy: rand(-140, -60), grav: 420, life: 0.8, kind: 'glyph', ch }));
-    burst(this.x + this.w / 2, this.y + this.bodyH / 2, 10, ['#ffffff', '#d8e0f0'], 80, 0.4, 200);
-    reward(this.kind === 'big' ? 'bigShatter' : 'shatter', this.x + this.w / 2, this.y - 4);
-    return true;
-  }
+  update(dt) { return WK.hzUpdate(this, 'bubble', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_air.rs
+  boxes() { return WK.hzBoxes(this, 'bubble'); }
+  onShot() { return WK.hzOn(this, 'bubble', 'shot'); }
   draw() {
     const pop = this.age < 0.12 ? easeBack(this.age / 0.12) : 1, wob = Math.round(Math.sin(this.age * 14) * 1);
     const img = this.flash > 0 ? silOf(this.spr) : this.spr;
@@ -558,18 +537,10 @@ class Bubble { // 사투리 말풍선 (귤로 맞히면 글자가 와르르)
 
 class Rotten { // 썩은 귤
   constructor(x, y, vx, vy) { this.x = x; this.y = y; this.vx = vx; this.vy = vy; this.life = 4; this.dodged = false; this.stompable = true; }
-  update(dt) {
-    this.life -= dt; this.vy += (this.grav || 560) * dt; this.x += this.vx * dt; this.y += this.vy * dt;
-    if (this.x < G.arenaL - 2 || this.x > G.arenaR) { this.vx *= -1; this.x = clamp(this.x, G.arenaL - 2, G.arenaR); }
-    if (this.y >= GROUND && this.falling) { this.pop(); fx({ x: this.x, y: GROUND - 1, kind: 'ring', life: 0.2, col: '#8a9a48' }); return false; }   // 감귤 따기: 곧게 떨어져 철퍽 (예고 자리 그대로)
-    if (this.y >= GROUND) { this.y = GROUND; this.vy = -Math.abs(this.vy) * 0.6; if (Math.abs(this.vy) < 60) this.vy = -150; this.vx *= 0.9; }
-    if (this.life <= 0) { this.pop(); return false; }
-    return !this.dead;
-  }
-  pop() { this.dead = true; burst(this.x, this.y - 4, 10, ['#5e6e34', '#8a9a48', '#3e4a2a'], 70, 0.45, 300); Sound.sfx.splat(); }
-  kill(by) { this.pop(); reward(by === 'stomp' ? 'stompKill' : 'shatter', this.x, this.y - 10); }
-  boxes() { return [{ x: this.x - 4, y: this.y - 8, w: 8, h: 8 }]; }
-  onShot() { this.kill(); return true; }
+  update(dt) { return WK.hzUpdate(this, 'rotten', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_air.rs
+  kill(by) { WK.hzOn(this, 'rotten', by === 'stomp' ? 'stomp' : 'shot'); }
+  boxes() { return WK.hzBoxes(this, 'rotten'); }
+  onShot() { return WK.hzOn(this, 'rotten', 'shot'); }
   draw() { if (this.life < 1 && Math.floor(this.life * 10) % 2) return; drawShadow(this.x, 7); g.drawImage(ROTTEN, Math.round(this.x - 5), Math.round(this.y - 10)); }
 }
 
@@ -594,30 +565,7 @@ const PINWHEEL = SPR.PINWHEEL;
 const ITEM_KINDS = ['basket', 'omegi', 'pinwheel', 'water', 'shield', 'bong'];
 class Pickup {
   constructor(kind, x, y, vx = 0, vy = 0) { Object.assign(this, { kind, x, y, vx, vy, life: 8, grounded: false, t: 0, phase: rand(0, 6.28), spin: rand(0, 1), sq: 0 }); }
-  update(dt) {
-    this.t += dt; this.sq = Math.max(0, this.sq - dt);
-    if (this.float) {   // 공중에 떠 있는 귤: 살랑 · 가까이 가면 끌려옴
-      this.life -= dt / G.speed; this.y = this.y0 + Math.sin(this.t * 3 + this.phase) * 1.5; this.spin += dt * 0.6;
-      const ddx = P.x - this.x, ddy = P.y - 12 - this.y; if (!P.dead && Math.hypot(ddx, ddy) < 16) { this.float = false; this.grounded = false; }
-      return this.life > 0 && !this.dead;
-    }
-    const dx = P.x - this.x, dy = P.y - 12 - this.y, d = Math.hypot(dx, dy), mag = (G.magnetT || 0) > 0 && this.kind === 'tang', pull = this.kind !== 'fake' && !P.dead && d < (mag ? 110 : 26);
-    if (pull) { this.grounded = false; this.sq = 0; const k = mag ? Math.max(18, 45 * (1 - d / 110)) : 45 * (1 - d / 26); this.vx += (dx * k - this.vx * 8) * dt; this.vy += (dy * k - this.vy * 8) * dt; }
-    else if (!this.grounded && this.sq === 0) {
-      // 공기 저항: 끝없이 빨라지지 않고, 옆으로 살랑살랑
-      this.vy = Math.min(this.vy + 520 * dt, 190);
-      this.vx = (this.vx + Math.sin(this.t * 3 + this.phase) * 8 * dt) * Math.exp(-0.6 * dt);
-    }
-    if (!this.grounded && this.sq === 0) { this.x += this.vx * dt; this.y += this.vy * dt; this.spin += (1.2 + Math.abs(this.vx) * 0.03) * dt; }
-    if (this.x < G.arenaL - 2 || this.x > G.arenaR) { this.vx *= -0.35; this.x = clamp(this.x, G.arenaL - 2, G.arenaR); }
-    if (this.y >= GROUND && this.vy > 0) {
-      const impact = this.vy; this.y = GROUND; this.sq = 0.07; this.vx *= 0.55;
-      this.grounded = impact < 45; this.vy = this.grounded ? 0 : -impact * 0.22;
-      if (this.grounded) this.vx = 0; else dust(this.x, GROUND, 1);
-    }
-    if (this.grounded) this.life -= dt / G.speed;   // 실제 시간으로 사라짐
-    return this.life > 0 && !this.dead;
-  }
+  update(dt) { return WK.hzUpdate(this, 'pickup', dt); }   // 움직임는 wasm/src/hz_item.rs
   box() { return { x: this.x - 6, y: this.y - 10, w: 12, h: 11 }; }
   draw() {
     if (this.life < 1.2 && Math.floor(this.life * 6) % 2) return;
@@ -642,12 +590,7 @@ class Pickup {
 // ── 플레이어의 귤 ────────────────────────────────────────────
 class Shot {
   constructor(x, y, dir) { this.x = x; this.y = y; this.vx = dir * 250 + P.vx * 0.25; this.vy = -40; this.rot = 0; this.trail = []; }
-  update(dt) {
-    this.vy += 150 * dt; this.x += this.vx * dt; this.y += this.vy * dt; this.rot += dt * 20;
-    this.trail.push([this.x, this.y]); if (this.trail.length > 5) this.trail.shift();
-    if (this.y >= GROUND - 2) { juice(this.x, GROUND - 2, 6); Sound.sfx.splat(); return false; }
-    return !this.dead && this.x > -10 && this.x < W + 10;
-  }
+  update(dt) { const alive = WK.hzUpdate(this, 'shot', dt); this.trail.push([this.x, this.y]); if (this.trail.length > 5) this.trail.shift(); return alive; }   // 움직임는 wasm/src/hz_item.rs
   box() { return { x: this.x - 4, y: this.y - 4, w: 8, h: 8 }; }
   draw() {
     this.trail.forEach(([x, y], i) => { g.fillStyle = i < 2 ? C.org[1] : C.org[2]; g.fillRect(Math.round(x), Math.round(y), 2, 2); });
@@ -812,18 +755,11 @@ class Zap {
   constructor(x, y, tx, ty, spr, speed) {
     const d = Math.hypot(tx - x, ty - y) || 1;
     this.x = this.ax = x; this.y = this.ay = y; this.vx = (tx - x) / d * speed; this.vy = (ty - y) / d * speed;
-    this.spr = spr; this.t = 0; this.aim = 0.5 * G.speed; this.dodged = false;
+    this.spr = spr; this.sprH = spr.height; this.metal = !!spr.metal; this.t = 0; this.aim = 0.5 * G.speed; this.dodged = false;
   }
-  update(dt) {
-    this.t += dt;
-    if (this.t < this.aim) return !this.dead;
-    if (!this.launched) { this.launched = true; Sound.sfx.throw(); fx({ x: this.x, y: this.y, kind: 'flare', size: 6, life: 0.15, col: C.org[3] }); }
-    if (Math.random() < dt * 40) fx({ x: this.x, y: this.y, vx: this.vx * 0.2, vy: this.vy * 0.2, life: 0.2, kind: 'trail', col: this.isText ? C.yel[3] : C.org[2] });
-    this.x += this.vx * dt; this.y += this.vy * dt;
-    return !this.dead && this.x > -20 && this.x < W + 20 && this.y > -VOFF - this.spr.height && this.y < GROUND + 10;
-  }
-  boxes() { return this.t < this.aim ? NONE : [{ x: this.x - 4, y: this.y - 4, w: 8, h: 8 }]; }
-  onShot() { this.dead = true; if (this.spr.metal) { spark(this.x, this.y); Sound.sfx.tink(); reward('shatter', this.x, this.y - 8); return true; } burst(this.x, this.y, 8, ['#5e6e34', '#8a9a48'], 70, 0.4, 0); Sound.sfx.splat(); reward('shatter', this.x, this.y - 8); return true; }
+  update(dt) { return WK.hzUpdate(this, 'zap', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_air.rs
+  boxes() { return WK.hzBoxes(this, 'zap'); }
+  onShot() { return WK.hzOn(this, 'zap', 'shot'); }
   draw() {
     if (this.t < this.aim) {
       if (Math.floor(this.t * 16) % 2) return;
@@ -940,7 +876,7 @@ const QUIZ = [
 ];
 class Answer {
   constructor(text, x, ok) { this.text = text; this.x = x; this.y = GROUND - 50; this.ok = ok; this.t = 0; this.spr = uiSprite(text, ok === undefined ? UI.gold : UI.gold); }
-  update(dt) { this.t += dt; this.y = GROUND - 50 + Math.round(Math.sin(this.t * 3) * 3); return !this.dead; }
+  update(dt) { return WK.hzUpdate(this, 'answer', dt); }   // 움직임는 wasm/src/hz_item.rs
   box() { const s = this.spr; return { x: this.x - s.width / 2, y: this.y, w: s.width, h: s.bodyH }; }
   draw() {
     const s = this.spr, k = easeBack(Math.min(1, this.t / 0.3));
@@ -971,33 +907,22 @@ class PatQuiz extends Pattern {
 }
 // ── ᄒᆞᆫ저옵서예~: 관광객 캐리어 ──
 class Suitcase {
-  constructor(dir, off) { this.dir = dir; this.k = randi(0, SUITCASES.length - 1); this.big = SUITCASES[this.k].big; this.x = dir > 0 ? -14 - off : W + 14 + off; this.y = GROUND; this.vy = 0; this.stompable = true; this.speed = rand(115, 150) + G.diff * 10; this.hop = Math.random() < 0.35; this.dodged = false; this.bouncy = true; this.rot = 0; }
-  update(dt) {
-    this.x += this.dir * this.speed * dt; this.rot += dt * 18;
-    if (this.hop) { this.vy += 700 * dt; this.y += this.vy * dt; if (this.y >= GROUND) { this.y = GROUND; this.vy = -Math.abs(this.vy) * 0.22; if (Math.abs(this.vy) < 25) { this.vy = 0; this.hop = false; } dust(this.x, GROUND, 2); } }
-    if (this.x > -10 && this.x < W + 10 && Math.random() < dt * 10) fx({ x: this.x - this.dir * 6, y: GROUND, vx: -this.dir * 20, vy: -10, life: 0.25, kind: 'puff', size: 1 });
-    return !this.dead && (this.dir > 0 ? this.x < W + 30 : this.x > -30);
-  }
-  boxes() { const s = SUITCASES[this.k].r; return [{ x: this.x - s.width / 2 + 2, y: this.y - s.height + 6, w: s.width - 4, h: s.height - 7 }]; }
+  constructor(dir, off) { this.dir = dir; this.k = randi(0, SUITCASES.length - 1); this.big = SUITCASES[this.k].big; this.sw = SUITCASES[this.k].r.width; this.sh = SUITCASES[this.k].r.height; this.x = dir > 0 ? -14 - off : W + 14 + off; this.y = GROUND; this.vy = 0; this.stompable = true; this.speed = rand(115, 150) + G.diff * 10; this.hop = Math.random() < 0.35; this.dodged = false; this.bouncy = true; this.rot = 0; }
+  update(dt) { return WK.hzUpdate(this, 'suitcase', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_ground.rs
+  boxes() { return WK.hzBoxes(this, 'suitcase'); }
   // 밟으면 뚜껑이 열리며 짐이 와르르 (밟기 보상)
-  kill(by) { this.dead = true; burst(this.x, this.y - 10, 16, ['#f4f0e0', '#e87a9a', '#4aa3ec', '#f2c84a'].map(c => mute(c)), 110, 0.6, 360, 'chunk'); Sound.sfx.shatter(); reward(by === 'stomp' ? 'stompKill' : 'shatter', this.x, this.y - 20); }
-  onShot() { this.kill('shot'); return true; }
+  kill(by) { WK.hzOn(this, 'suitcase', by === 'stomp' ? 'stomp' : 'shot'); }
+  onShot() { return WK.hzOn(this, 'suitcase', 'shot'); }
   draw() { const s = SUITCASES[this.k][this.dir > 0 ? 'l' : 'r']; drawShadow(this.x, s.width - 2); g.drawImage(s, Math.round(this.x - s.width / 2), Math.round(this.y - s.height + 3)); }
 }
 // ── 똥돼지 질주 ──
 class Pig {
   constructor(dir, off) { this.dir = dir; this.x = dir > 0 ? -16 - off : W + 16 + off; this.y = GROUND; this.vy = 0; this.bouncy = true; this.speed = (rand(175, 215) + G.diff * 12) * Math.min(1, 1.35 / G.speed); this.anim = Math.random() * 4; this.leap = Math.random() < 0.3 + G.diff * 0.08; this.leaped = false; this.dodged = false; this.bouncy = true; }
-  update(dt) {
-    this.x += this.dir * this.speed * dt; this.anim += dt * this.speed / 12;
-    if (this.leap && !this.leaped && Math.abs(this.x - P.x) < 130) { this.leaped = true; this.vy = -230; Sound.sfx.oink(); dust(this.x, GROUND, 4, 0, 1); fx({ x: this.x, y: GROUND - 18, kind: 'flare', size: 5, life: 0.15, col: C.yel[3] }); }
-    if (this.y < GROUND || this.vy < 0) { this.vy += 760 * dt; this.y += this.vy * dt; if (this.y >= GROUND) { this.y = GROUND; this.vy = 0; dust(this.x, GROUND, 3); } }
-    if (this.x > -10 && this.x < W + 10 && Math.random() < dt * 18) dust(this.x - this.dir * 10, GROUND, 1, -this.dir);
-    return !this.dead && (this.dir > 0 ? this.x < W + 30 : this.x > -30);
-  }
-  boxes() { return [{ x: this.x - 11, y: this.y - 14, w: 22, h: 12 }]; }
+  update(dt) { return WK.hzUpdate(this, 'pig', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_ground.rs
+  boxes() { return WK.hzBoxes(this, 'pig'); }
   draw() { const f = PIG[Math.floor(this.anim) % 4][this.dir > 0 ? 'r' : 'l'], bob = this.leap && !this.leaped ? -Math.round(Math.abs(Math.sin(this.anim * 1.57)) * 3) : 0; drawShadow(this.x, 20); g.drawImage(f, Math.round(this.x - f.ax), Math.round(this.y - f.ay) + bob); }
-  onBounce() { Sound.sfx.oink(); this.squash = 0.15; return true; }   // 밟으면 꿀꿀 · 등을 디딤돌 삼아 튀어 오름
-  onShot(s) { spark(s.x, s.y); Sound.sfx.oink(); return true; }
+  onBounce() { return WK.hzOn(this, 'pig', 'bounce'); }   // 밟으면 꿀꿀 · 등을 디딤돌 삼아 튀어 오름
+  onShot(s) { return WK.hzOn(this, 'pig', 'shot', s.x, s.y); }
 }
 class PatSuitcase extends Pattern {
   constructor() { super(7.5); this.next = 0.3; this.flash = 1.5; }
@@ -1084,21 +1009,17 @@ class SplitZap extends Zap {
   constructor(x, y, tx, ty, word, meaning, speed) {
     super(x, y, tx, ty, wordSprite(word, 'kind'), speed); this.meaning = meaning; this.splitT = this.aim + 0.55; this.isText = true;
   }
-  update(dt) {
-    if (!super.update(dt)) return false;
-    if (this.t >= this.splitT) {
-      this.dead = true; Sound.sfx.pop(); shake(0.12); fx({ x: this.x, y: this.y, kind: 'ring', life: 0.3, col: C.yel[3] }); fx({ x: this.x, y: this.y, kind: 'flare', size: 10, life: 0.2, col: C.yel[3] });
-      popup('해석!', this.x, this.y - 12, C.yel[3], 's');
-      const chars = graphemes(this.meaning.replace(/[\s!?,.]/g, '')).slice(0, 3), base = Math.atan2(this.vy, this.vx), sp = Math.hypot(this.vx, this.vy) * 1.1;
-      chars.forEach((ch, i) => {
-        const a = base + (i - (chars.length - 1) / 2) * 0.42, z = new Zap(this.x, this.y, this.x + Math.cos(a) * 100, this.y + Math.sin(a) * 100, wordSprite(ch, 'n'), sp);
-        z.aim = 0.3 * G.speed; z.isText = true; z.pat = this.pat; spawnHz(z);   /* 갈라진 글자도 잠깐 조준선 */
-      });
-      return false;
-    }
-    return true;
+  update(dt) { return WK.hzUpdate(this, 'splitZap', dt); }   // 움직임 · 맞았을 때는 wasm/src/hz_air.rs
+  // 뜻풀이 글자로 갈라짐 (Rust가 갈라지는 순간 부름)
+  split() {
+    popup('해석!', this.x, this.y - 12, C.yel[3], 's');
+    const chars = graphemes(this.meaning.replace(/[\s!?,.]/g, '')).slice(0, 3), base = Math.atan2(this.vy, this.vx), sp = Math.hypot(this.vx, this.vy) * 1.1;
+    chars.forEach((ch, i) => {
+      const a = base + (i - (chars.length - 1) / 2) * 0.42, z = new Zap(this.x, this.y, this.x + Math.cos(a) * 100, this.y + Math.sin(a) * 100, wordSprite(ch, 'n'), sp);
+      z.aim = 0.3 * G.speed; z.isText = true; z.pat = this.pat; spawnHz(z);   /* 갈라진 글자도 잠깐 조준선 */
+    });
   }
-  onShot() { this.dead = true; popup('격파', this.x, this.y - 12, '#ffffff', 's'); reward('shatter', this.x, this.y - 8); Sound.sfx.tink(); return true; }
+  onShot() { return WK.hzOn(this, 'splitZap', 'shot'); }
 }
 // ── 할망 시그니처 1: 이퀄라이저 비트 바 — 랩 박자에 맞춰 땅에서 막대가 솟음 (한 박 전에 바닥이 깜빡) ──
 // 주상절리 기둥: 윗면은 육각 · 오각 다각형(살짝 내려다본 모양), 앞으로 보이는 면 2~3개, 면을 따라 휘는 가로 마디 · 숨구멍
@@ -1559,21 +1480,12 @@ class Gull {
     this.tx = clamp(P.x + rand(-24, 24), 16, W - 16); this.dir = Math.random() < 0.5 ? -1 : 1;
     this.x = this.tx - this.dir * 190; this.y = -VOFF - 12; this.t = 0; this.T = Math.max(1.0, 1.3 - G.diff * 0.05) * G.speed; this.dodged = false; this.anim = 0; this.sy = this.y; this.sx = this.x; this.squawk = false;
   }
-  update(dt) {
-    this.t += dt; this.anim += dt * 10;
-    if (this.t < 0) return !this.dead;   // 편대: 차례가 올 때까지 대기 (길 미리보기는 계속 보임)
-    const k = this.t / this.T;
-    // 포물선으로 내리꽂았다가 다시 올라감
-    this.x = lerp(this.sx, this.tx + this.dir * 190, k);
-    this.y = this.sy + (GROUND - 10 - this.sy) * (1 - Math.pow(2 * k - 1, 2));
-    if (!this.squawk && k > 0.25) { this.squawk = true; Sound.sfx.gull(); }
-    return !this.dead && k < 1;
-  }
-  boxes() { return this.t < 0 ? NONE : [{ x: this.x - 6, y: this.y - 5, w: 12, h: 8 }]; }
+  update(dt) { return WK.hzUpdate(this, 'gull', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_air.rs
+  boxes() { return WK.hzBoxes(this, 'gull'); }
   drawDecal() { const k = Math.max(0, this.t) / this.T;
     if (k < 0.45) { g.globalAlpha = 1 - k / 0.45; for (let s = Math.max(0.08, k); s < 0.92; s += 0.04) { const x = Math.round(lerp(this.sx, this.tx + this.dir * 190, s)), y = Math.round(this.sy + (GROUND - 10 - this.sy) * (1 - Math.pow(2 * s - 1, 2))); if (y < -VOFF + 30) continue; g.fillStyle = INK; g.fillRect(x - 1, y - 1, 3, 3); g.fillStyle = C.red[3]; g.fillRect(x, y, 1, 1); } g.globalAlpha = 1; }
     if (k < 0.7) { const a = 0.15 + Math.min(1, k / 0.4) * 0.3; g.fillStyle = `rgba(30,20,40,${a})`; g.fillRect(Math.round(this.tx - 40), GROUND, 80, 1); g.fillStyle = `rgba(200,40,40,${a})`; g.fillRect(Math.round(this.tx - 6), GROUND, 12, 1); } }
-  onShot() { this.dead = true; burst(this.x, this.y, 10, ['#ffffff', '#c8ccd6'], 70, 0.5, 120); reward('shatter', this.x, this.y - 10); return true; }
+  onShot() { return WK.hzOn(this, 'gull', 'shot'); }
   draw() { const f = GULL[[0, 0, 1, 1, 1, 0][Math.floor(this.anim) % 6]][this.dir > 0 ? 'r' : 'l']; g.drawImage(f, Math.round(this.x - f.ax), Math.round(this.y - f.ay)); }
 }
 class PatGull extends Pattern {
@@ -1595,14 +1507,9 @@ class PatGull extends Pattern {
 // ── 렌터카 대행진 ──
 class RentCar {
   constructor(dir, off) { this.dir = dir; this.x = dir > 0 ? -24 - off : W + 24 + off; this.speed = (rand(190, 230) + G.diff * 12) * Math.min(1, 1.6 / G.speed); this.dodged = false; this.bouncy = true; this.honk = false; this.t = 0; }
-  update(dt) {
-    this.t += dt; this.x += this.dir * this.speed * dt;
-    if (!this.honk && this.x > 12 && this.x < W - 12 && Math.abs(this.x - P.x) < 120) { this.honk = true; Sound.sfx.honk(); for (let i = 0; i < 3; i++) fx({ x: this.x + this.dir * 18, y: GROUND - 10 + (i - 1) * 3, vx: this.dir * 120, life: 0.12, kind: 'streak', len: 4, col: C.yel[3] }); }
-    if (this.x > -10 && this.x < W + 10 && Math.random() < dt * 20) fx({ x: this.x - this.dir * 16, y: GROUND - 3, vx: -this.dir * 30, vy: -8, life: 0.4, kind: 'puff', size: 1 });
-    return this.dir > 0 ? this.x < W + 40 : this.x > -40;
-  }
-  boxes() { return [{ x: this.x - 14, y: GROUND - 15, w: 28, h: 14 }]; }
-  onShot(s) { spark(s.x, s.y); Sound.sfx.tink(); return true; }
+  update(dt) { return WK.hzUpdate(this, 'rentcar', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_ground.rs
+  boxes() { return WK.hzBoxes(this, 'rentcar'); }
+  onShot(s) { return WK.hzOn(this, 'rentcar', 'shot', s.x, s.y); }
   draw() { const c = RENTCAR[this.dir > 0 ? 'r' : 'l']; drawShadow(this.x, 28); g.drawImage(c, Math.round(this.x - 16), Math.round(GROUND - 17)); }
 }
 class PatCar extends Pattern {
@@ -1621,13 +1528,9 @@ const BEE = SPR.BEE;
 class Bee {
   constructor(dir, i, speed, ph) { this.dir = dir; this.i = i; this.x = dir > 0 ? -10 - i * 12 : W + 10 + i * 12; this.ph = ph; this.y = this.path(); this.speed = speed; this.t = 0; this.dodged = false; this.stompable = false; }
   path() { return GROUND - 24 + Math.sin(this.x * 0.045 + this.ph) * 14; }
-  update(dt) {
-    this.t += dt; this.x += this.dir * this.speed * dt;
-    this.y = this.path();
-    return !this.dead && (this.dir > 0 ? this.x < W + 20 : this.x > -20);
-  }
-  boxes() { return [{ x: this.x - 3, y: this.y - 3, w: 6, h: 5 }]; }
-  onShot() { daily('bee'); this.dead = true; burst(this.x, this.y, 6, [C.yel[2], C.stone[1]], 60, 0.35, 120); reward('shatter', this.x, this.y - 8); Sound.sfx.tink(); return true; }
+  update(dt) { return WK.hzUpdate(this, 'bee', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_air.rs
+  boxes() { return WK.hzBoxes(this, 'bee'); }
+  onShot() { return WK.hzOn(this, 'bee', 'shot'); }
   draw() { const f = BEE[Math.floor(this.t * 18) % 2][this.dir > 0 ? 'r' : 'l']; g.drawImage(f, Math.round(this.x - f.ax), Math.round(this.y - f.ay)); }
 }
 class PatBee extends Pattern {
@@ -1646,17 +1549,9 @@ class PatBee extends Pattern {
 const SPARROW = SPR.SPARROW;
 class Plane {   // 참새 무리 (낮게 2마리 · 높게 3마리 — 판정 폭은 예전 비행기와 같음)
   constructor(dir, low, speed) { this.dir = dir; this.low = low; this.y = low ? GROUND - 20 : GROUND - 44; this.x = dir > 0 ? -24 : W + 24; this.speed = speed; this.t = 0; this.warn = 0.7 * G.speed; this.dodged = false; this.birds = (low ? [[-7, 2], [7, -2]] : [[-13, 2], [0, -3], [13, 1]]).map(([ox, oy], i) => ({ ox, oy, ph: i * 1.3 + rand(0, 1) })); }
-  update(dt) {
-    this.t += dt;
-    if (this.flee) { this.x += this.dir * this.speed * 0.5 * dt; this.y -= 140 * dt; return this.y > -VOFF - 20; }   // 귤에 맞으면 놀라서 위로 흩어져 날아감
-    if (this.t >= this.warn) {
-      if (!this.roared) { this.roared = true; Sound.sfx.chirp(); }
-      this.x += this.dir * this.speed * dt;
-    }
-    return !this.dead && (this.dir > 0 ? this.x < W + 30 : this.x > -30);
-  }
-  boxes() { return this.t < this.warn || this.flee ? NONE : this.low ? [{ x: this.x - 10, y: this.y - 4, w: 20, h: 9 }] : [{ x: this.x - 15, y: this.y - 4, w: 30, h: 9 }]; }
-  onShot(s) { this.flee = true; Sound.sfx.chirp(); burst(s.x, s.y, 6, ['#8a5a3a', '#b4865c', '#e6dac2'], 50, 0.5, 80, 'chunk'); reward('shatter', this.x, this.y - 8); return true; }
+  update(dt) { return WK.hzUpdate(this, 'plane', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_air.rs
+  boxes() { return WK.hzBoxes(this, 'plane'); }
+  onShot(s) { return WK.hzOn(this, 'plane', 'shot', s.x, s.y); }
   drawBirds(sil) {
     const set = SPARROW[this.dir > 0 ? 'r' : 'l'];
     for (const b of this.birds) {
@@ -1690,21 +1585,10 @@ class PatPlane extends Pattern {
 const PARCEL = SPR.PARCEL;
 class Parcel {
   constructor(x, delay) { this.x = x; this.y = -VOFF - 16; this.t = 0; this.warn = delay; this.state = 'warn'; this.dodged = false; this.stompable = true; }
-  update(dt) {
-    this.t += dt;
-    if (this.state === 'warn' && this.t >= this.warn) this.state = 'fall';
-    if (this.state === 'fall') { this.vy = Math.min(820, (this.vy || 220) + 2600 * dt); this.y += this.vy * dt; if (this.y >= GROUND - 13) { this.y = GROUND - 13; this.state = 'rest'; this.safe = true; this.restT = 0; shake(0.12); Sound.sfx.thud(); dust(this.x, GROUND, 5, 0, 1); fx({ x: this.x, y: GROUND - 1, kind: 'ring', life: 0.25, col: '#fff4e0' }); burst(this.x, GROUND - 4, 6, [C.wood[1], C.wood[2], C.soil[3]], 90, 0.45, 380, 'chunk'); } }   // 점점 빨라지며 떨어지고 쿵
-    if (this.state === 'rest') { this.restT += dt; if (this.restT > 1.6 * G.speed) { this.open(false); return false; } }
-    return !this.dead;
-  }
-  open(bonus) {
-    this.dead = true; burst(this.x, GROUND - 8, 8, [C.wood[2], C.org[2]], 70, 0.4, 260);
-    const n = bonus ? 3 : 1; for (let i = 0; i < n; i++) G.pickups.push(new Pickup('tang', this.x + rand(-6, 6), GROUND - 14, rand(-50, 50), rand(-160, -110)));
-    if (bonus) popup('+귤', this.x, GROUND - 26, C.org[3], 's');
-  }
-  kill() { this.open(true); reward('shatter', this.x, GROUND - 16); }
-  boxes() { return this.state === 'fall' ? [{ x: this.x - 7, y: this.y, w: 14, h: 13 }] : this.state === 'rest' ? [{ x: this.x - 7, y: this.y + 2, w: 14, h: 4 }] : NONE; }
-  onShot() { this.kill(); return true; }
+  update(dt) { return WK.hzUpdate(this, 'parcel', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_air.rs
+  kill() { WK.hzOn(this, 'parcel', 'stomp'); }
+  boxes() { return WK.hzBoxes(this, 'parcel'); }
+  onShot() { return WK.hzOn(this, 'parcel', 'shot'); }
   draw() {
     const k = this.state === 'warn' ? this.t / this.warn : 1;
     g.fillStyle = `rgba(30,16,14,${0.2 + 0.4 * k})`; g.fillRect(Math.round(this.x - 4 - 4 * k), GROUND, Math.round(8 + 8 * k), 2);
@@ -1729,18 +1613,9 @@ const WALL_TOP = -VOFF - 4, WALL_H = GROUND - WALL_TOP;
 const GLIDER = SPR.GLIDER;
 class Glider {
   constructor(dir, high, speed) { this.dir = dir; this.y0 = high ? GROUND - 140 : GROUND - 96; this.y = this.y0; this.x = dir > 0 ? -16 : W + 16; this.speed = speed; this.t = rand(0, 6); this.safe = true; this.bouncy = true; this.ambient = true; this.dodged = true; this.life = 10; }
-  update(dt) {
-    this.t += dt; this.life -= dt; this.x += this.dir * this.speed * dt; this.y = this.y0 + Math.sin(this.t * 2) * 3;
-    return !this.dead && this.life > 0 && (this.dir > 0 ? this.x < W + 20 : this.x > -20);
-  }
-  boxes() { return [{ x: this.x - 12, y: this.y - 10, w: 24, h: 6 }]; }
-  onBounce() {
-    this.sq = 0.15;
-    if (this.paid) return false; this.paid = true;
-    for (let i = 0; i < 2; i++) G.pickups.push(new Pickup('tang', this.x + rand(-6, 6), this.y - 8, rand(-50, 50), rand(-120, -80)));
-    fx({ x: this.x, y: this.y - 10, kind: 'ring', big: true, life: 0.3, col: C.teal[3] }); light(this.x, this.y - 8, 24, C.teal[3], 0.7);
-    return true;
-  }
+  update(dt) { return WK.hzUpdate(this, 'glider', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_air.rs
+  boxes() { return WK.hzBoxes(this, 'glider'); }
+  onBounce() { return WK.hzOn(this, 'glider', 'bounce'); }
   draw() {
     const sq = this.sq > 0 ? 1 : 0; this.sq = Math.max(0, (this.sq || 0) - 1 / 120);
     g.save(); g.globalAlpha = this.life < 1 && Math.floor(this.life * 10) % 2 ? 0.4 : 1;
@@ -1776,18 +1651,9 @@ function splashFx(x, big = 1) {
 class Dolphin {
   constructor(x0, x1, peak, T, warn) { Object.assign(this, { x0, x1, peak, T, warn, t: 0, dodged: false, s: -1 }); this.dir = Math.sign(x1 - x0); this.x = x0; this.y = GROUND + 10; }
   pos(s) { return [lerp(this.x0, this.x1, s), GROUND + 10 - (this.peak + 10) * 4 * s * (1 - s)]; }
-  update(dt) {
-    this.t += dt; const s = (this.t - this.warn) / this.T;
-    if (s >= 0 && this.s < 0) splashFx(this.x0, 1);
-    if (s >= 0) {
-      this.s = s; [this.x, this.y] = this.pos(Math.min(1, s));
-      if (Math.random() < dt * 40) fx({ x: this.x - this.dir * 8, y: this.y + rand(-2, 2), vx: -this.dir * rand(10, 30), vy: rand(-10, 20), grav: 300, life: 0.4, kind: 'px', col: pick(['#cfe4ec', '#9ec2d4']) });
-      if (s >= 1) { splashFx(this.x1, 1.3); return false; }
-    }
-    return !this.dead;
-  }
-  boxes() { return this.s < 0 ? NONE : [{ x: this.x - 7, y: this.y - 4, w: 14, h: 8 }]; }
-  onShot(sh) { spark(sh.x, sh.y); Sound.sfx.tink(); return true; }
+  update(dt) { return WK.hzUpdate(this, 'dolphin', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_air.rs
+  boxes() { return WK.hzBoxes(this, 'dolphin'); }
+  onShot(sh) { return WK.hzOn(this, 'dolphin', 'shot', sh.x, sh.y); }
   drawDecal() {
     // 지나갈 길: 처음엔 또렷한 점선, 뛰어오르면 남은 길만 옅게
     const s0 = Math.max(0, this.s), on = this.s < 0;
@@ -1827,40 +1693,9 @@ const CROW = SPR.CROW;
 const BAT = SPR.BAT;
 class Crow {
   constructor(x, delay) { this.px = x; this.py = -VOFF + 50 + rand(-6, 6); this.x = x + rand(-40, 40); this.sx = this.x; this.y = -VOFF - 16; this.t = 0; this.delay = delay; this.state = 'in'; this.dodged = false; this.anim = rand(0, 6); this.face = 1; this.bat = !!themeCfg().indoor; }
-  update(dt) {
-    this.t += dt; this.anim += dt * (this.bat ? 18 : 12);
-    const sp = 210 * Math.min(1, 1.35 / G.speed);
-    if (this.state === 'in') {
-      const k = easeOut(this.t / (0.45 * G.speed)); this.x = lerp(this.sx, this.px, k); this.y = lerp(-VOFF - 16, this.py, k); this.face = P.x >= this.x ? 1 : -1;
-      if (this.t >= this.delay) { this.state = 'aim'; this.t = 0; if (this.bat) Sound.sfx.tink(); else Sound.sfx.caw(); }
-    } else if (this.state === 'aim') {
-      this.y = this.py + Math.sin(this.anim * 0.4) * 1.5;
-      if (!this.locked) {
-        this.tx = P.x; this.ty = P.y - 10; this.face = P.x >= this.x ? 1 : -1;
-        if (this.t >= 0.3 * G.speed) {
-          this.locked = true; Sound.sfx.tink();
-          const dx = this.tx - this.x, dy = Math.max(50, this.ty - this.y), L = Math.hypot(dx, dy); this.vx = dx / L; this.vy = dy / L;
-          this.gx = this.x + this.vx / this.vy * (GROUND - 4 - this.y);
-          fx({ x: this.x, y: this.y - 2, kind: 'flare', size: 5, life: 0.18, col: C.red[3] });
-        }
-      }
-      if (this.t >= 0.9 * G.speed) { this.state = 'dive'; Sound.sfx.whoosh(); }
-    } else if (this.state === 'dive') {
-      this.x += this.vx * sp * dt; this.y += this.vy * sp * dt;
-      this.ghT = (this.ghT || 0) - dt; if (this.ghT <= 0) { this.ghT = 0.03; G.ghosts.push({ img: this.frame(), x: this.x, y: this.y, life: 0.15, col: C.red[2] }); }
-      if (this.y >= GROUND - 4) {
-        this.state = 'up'; this.vy = -1; shake(0.09); dust(this.x, GROUND, 5, this.vx > 0 ? 1 : -1, 1); Sound.sfx.thud();
-        fx({ x: this.x, y: GROUND - 2, kind: 'flare', size: 8, life: 0.12, col: '#fff4e0' }); fx({ x: this.x, y: GROUND - 1, kind: 'ring', life: 0.25, col: '#fff4e0' }); if (Math.abs(this.x - P.x) < 30) hitstop(0.02, 0.6);   // 땅에 꽂히는 순간 (숨비 가까이면 짧게 멈칫)
-        for (let i = 0; i < 10; i++) fx({ x: this.x, y: GROUND - 4, vx: rand(-50, 50), vy: -rand(30, 90), grav: 120, drag: 2, life: rand(0.5, 0.9), kind: 'chunk', size: 1, col: pick(['#2c2634', '#40384c']) });
-      }
-    } else {
-      this.x += this.vx * sp * 0.6 * dt; this.y -= sp * 0.55 * dt;
-      if (this.y < -VOFF - 20 || this.x < -20 || this.x > W + 20) return false;
-    }
-    return !this.dead;
-  }
-  boxes() { return this.state === 'dive' ? [{ x: this.x - 5, y: this.y - 3, w: 10, h: 6 }] : NONE; }
-  onShot() { this.dead = true; burst(this.x, this.y, 8, ['#2c2634', '#40384c', '#5a5268'], 60, 0.6, 120, 'chunk'); reward('shatter', this.x, this.y - 10); return true; }
+  update(dt) { return WK.hzUpdate(this, 'crow', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_air.rs
+  boxes() { return WK.hzBoxes(this, 'crow'); }
+  onShot() { return WK.hzOn(this, 'crow', 'shot'); }
   frame() {
     const S = this.bat ? BAT : CROW, set = (this.state === 'dive' ? this.vx : this.face) >= 0 ? S.r : S.l;
     if (this.state === 'dive') return set[3];
@@ -1898,33 +1733,9 @@ class DialectWord {
     this.w = this.spr.width; this.h = this.spr.height; const lo = G.arenaL + this.w / 2 + 2, hi = G.arenaR - this.w / 2 - 2; this.x = lo <= hi ? clamp(x, lo, hi) : (G.arenaL + G.arenaR) / 2;
     this.land = land; this.fall = 0.42 * G.speed; this.t = 0; this.y = -VOFF - this.h - 4; this.dodged = false; this.st = 'warn';
   }
-  update(dt) {
-    this.t += dt;
-    if (this.st === 'warn' && this.t >= this.land - this.fall) { this.st = 'fall'; Sound.sfx.whoosh(); }
-    if (this.st === 'fall') {
-      const s = clamp((this.t - (this.land - this.fall)) / this.fall, 0, 1);
-      this.y = lerp(-VOFF - this.h - 4, GROUND - this.h, s * s);
-      if (Math.random() < dt * 40) fx({ x: this.x + rand(-this.w / 2, this.w / 2), y: this.y - 2, vy: -rand(20, 60), life: 0.25, kind: 'streak', len: randi(4, 8), col: 'rgba(255,244,224,0.45)' });
-      if (s >= 1) {
-        this.st = 'land'; this.lT = 0; Sound.sfx.boom(); Sound.duck(0.25); shake(0.3); kick(0, 3); hitstop(0.04);
-        for (let k = -2; k <= 2; k++) dust(this.x + k * this.w / 5, GROUND, 3, Math.sign(k), 2);
-        fx({ x: this.x, y: GROUND - 1, kind: 'ring', big: true, life: 0.35, col: C.yel[3] });
-        for (let i = 0; i < 12; i++) fx({ x: this.x + rand(-this.w / 2, this.w / 2), y: GROUND - 3, vx: rand(-90, 90), vy: -rand(80, 180), grav: 480, life: rand(0.4, 0.7), kind: 'chunk', size: randi(1, 2), col: pick([C.soil[2], C.soil[3], C.stone[3]]) });
-        light(this.x, GROUND - this.h / 2, this.w * 0.6, C.yel[3], 0.8);
-      }
-    }
-    if (this.st === 'land') {
-      this.lT += dt;
-      if (this.lT > 0.32 * G.speed) {
-        for (let i = 0; i < 14; i++) fx({ x: this.x + rand(-this.w / 2, this.w / 2), y: GROUND - rand(2, this.h), vx: rand(-80, 80), vy: -rand(60, 160), grav: 420, life: rand(0.4, 0.8), kind: 'chunk', size: randi(1, 2), col: pick(WORD_RAMP()) });
-        popup('= ' + this.mean, this.x, GROUND - this.h - 12, C.yel[2], 's'); Sound.sfx.shatter();
-        return false;
-      }
-    }
-    return !this.dead;
-  }
-  boxes() { return this.st === 'fall' ? [{ x: this.x - this.w / 2 + 2, y: this.y + 2, w: this.w - 4, h: this.h - 3 }] : NONE; }
-  onShot(sh) { spark(sh.x, sh.y); Sound.sfx.tink(); return true; }
+  update(dt) { return WK.hzUpdate(this, 'dialect', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_air.rs
+  boxes() { return WK.hzBoxes(this, 'dialect'); }
+  onShot(sh) { return WK.hzOn(this, 'dialect', 'shot', sh.x, sh.y); }
   drawDecal() {
     if (this.st !== 'warn') return;
     const k = clamp(this.t / (this.land - this.fall), 0, 1), w = Math.round(this.w * (0.5 + 0.5 * k)), blink = Math.floor(this.t * (k > 0.7 ? 18 : 6)) % 2;

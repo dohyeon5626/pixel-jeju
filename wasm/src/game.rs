@@ -17,6 +17,7 @@ extern "C" {
     fn jhitstop(t: f64, cd: f64);
     fn jreward(kind: f64, x: f64, y: f64);
     fn jdecal(x: f64, life: f64);
+    fn jhook(id: f64, a: f64, b: f64, c: f64, d: f64) -> f64;
 }
 
 pub const GROUND: f64 = 156.0;
@@ -24,34 +25,55 @@ pub const VOFF: f64 = 60.0;
 
 // ── 이름표: JS가 처음에 받아 가서 번호 ↔ 이름을 바꿈 ──────────
 pub const FX_KINDS: [&str; 10] = ["px", "chunk", "puff", "spark", "ring", "flare", "smoke", "ember", "trail", "streak"];
-pub const SFX: [&str; 7] = ["crack", "rise", "hop", "shatter", "gallop", "tink", "boom"];
-pub const REWARDS: [&str; 3] = ["stompKill", "shotKill", "shatter"];
+pub const SFX: [&str; 18] = [
+    "crack", "rise", "hop", "shatter", "gallop", "tink", "boom", "hit", "splat", "throw", "chirp", "thud", "whoosh", "caw", "oink", "honk",
+    "gull", "pop",
+];
+pub const REWARDS: [&str; 4] = ["stompKill", "shotKill", "shatter", "bigShatter"];
 pub const PALS: [&str; 10] = ["soil", "stone", "yel", "org", "red", "teal", "leaf", "cloth", "wood", "skin"];
+// JS 쪽 일 (글자 · 새 객체 · 사운드 덕킹처럼 Rust가 못 하는 것): 부르기 전에 JS가 지금 장애물 객체를 최신 값으로 맞춰 둠
+//  daily(글) · popup(글, x, y, 색) · tang(x, y, vx, vy) · splash(x, 크기) · ghost(x, y, 수명, 색) · glyphs(x, y) · split() · kick(dx, dy) · duck(t) · mean(x, y)
+pub const HOOKS: [&str; 10] = ["daily", "popup", "tang", "splash", "ghost", "glyphs", "split", "kick", "duck", "mean"];
+// hook에 넘기는 글 · 팔레트에 없는 CSS 색
+pub const STRS: [&str; 3] = ["bee", "+귤", "격파"];
+pub const CSS: [&str; 1] = ["rgba(255,244,224,0.45)"];
 fn idx(list: &[&str], k: &str) -> f64 {
     list.iter().position(|x| *x == k).expect("이름표에 없음") as f64
 }
 
-// ── 색: 0 이상이면 0xRRGGBB, 음수면 팔레트 C[이름][칸] ────────
+// ── 색: 0 이상이면 0xRRGGBB (0x1000000을 더하면 mute한 색), -1 ~ -999는 팔레트 C[이름][칸], -1000부터는 CSS 목록 ──
 pub fn hexc(rgb: u32) -> f64 {
     rgb as f64
+}
+pub fn muted(rgb: u32) -> f64 {
+    (rgb | 0x1000000) as f64
+}
+pub fn css(s: &str) -> f64 {
+    -1000.0 - idx(&CSS, s)
 }
 pub fn pc(pal: &str, i: usize) -> f64 {
     -((idx(&PALS, pal) as usize * 16 + i) as f64) - 1.0
 }
 
-// ── 지금 판의 값 (JS가 부를 때마다 넘김) ─────────────────────
+// ── 지금 판의 값 (JS가 부르기 전에 CTX_BUF에 씀: 화면 폭 · 숨비 자리 · 숨비 죽음 · 경기장 양 끝 · 속도 배율 · 귤자석 남은 시간) ──
 pub struct Ctx {
     pub w: f64,
     pub px: f64,
+    pub py: f64,
+    pub p_dead: bool,
+    pub arena_l: f64,
+    pub arena_r: f64,
+    pub speed: f64,
+    pub magnet: f64,
 }
-static mut CTX: Ctx = Ctx { w: 426.0, px: 0.0 };
-pub fn ctx() -> &'static Ctx {
-    unsafe { &*std::ptr::addr_of!(CTX) }
+pub const CTX_LEN: usize = 8;
+static mut CTX_BUF: [f64; CTX_LEN] = [426.0, 0.0, 0.0, 0.0, 0.0, 426.0, 1.0, 0.0];
+pub fn ctx_buf() -> *mut f64 {
+    unsafe { std::ptr::addr_of_mut!(CTX_BUF) as *mut f64 }
 }
-pub fn set_ctx(w: f64, px: f64) {
-    unsafe {
-        CTX = Ctx { w, px };
-    }
+pub fn ctx() -> Ctx {
+    let b = unsafe { *std::ptr::addr_of!(CTX_BUF) };
+    Ctx { w: b[0], px: b[1], py: b[2], p_dead: b[3] != 0.0, arena_l: b[4], arena_r: b[5], speed: b[6], magnet: b[7] }
 }
 
 // ── 난수 (원래 JS rand · randi · pick) ────────────────────────
@@ -69,6 +91,18 @@ pub fn pick(a: &[f64]) -> f64 {
 }
 pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
     a + (b - a) * t
+}
+// 원래 JS easeOut (세제곱)
+pub fn ease_out(t: f64) -> f64 {
+    1.0 - pow(1.0 - clamp(t, 0.0, 1.0), 3.0)
+}
+// JS `v || d`: 아직 없거나(NaN) 0이면 d
+pub fn or(v: f64, d: f64) -> f64 {
+    if v.is_nan() || v == 0.0 {
+        d
+    } else {
+        v
+    }
 }
 pub fn ease_back(t: f64) -> f64 {
     let t = clamp(t, 0.0, 1.0);
@@ -146,6 +180,22 @@ pub fn reward(kind: &str, x: f64, y: f64) {
 pub fn decal(x: f64, life: f64) {
     unsafe { jdecal(x, life) }
 }
+// 귤 즙 튀김 (원래 JS juice)
+pub fn juice(x: f64, y: f64, n: f64) {
+    burst(x, y, n, &[pc("org", 2), pc("org", 3), pc("org", 4), pc("yel", 3)], 90.0, 0.45, 420.0, "px");
+}
+pub fn hook(name: &str, a: f64, b: f64, c: f64, d: f64) {
+    unsafe {
+        jhook(idx(&HOOKS, name), a, b, c, d);
+    }
+}
+pub fn str_id(s: &str) -> f64 {
+    idx(&STRS, s)
+}
+
+// 맞았을 때 종류 (hz.rs EVENTS 순서: 0 귤에 맞음 · 1 밟힘 · 2 밟고 튀어 오름)
+pub const EV_STOMP: i32 = 1;
+pub const EV_BOUNCE: i32 = 2;
 
 // ── 장애물 필드 ───────────────────────────────────────────────
 // 필드 종류: 숫자 · 참거짓 · 이름(단계 같은 문자열, 목록 안 번호로 주고받음)
@@ -172,11 +222,14 @@ pub fn tables_json(kinds: &[(&str, Schema)]) -> String {
         .collect::<Vec<_>>()
         .join(",");
     format!(
-        "{{\"fx\":{},\"sfx\":{},\"rewards\":{},\"pals\":{},\"kinds\":{{{}}}}}",
+        "{{\"fx\":{},\"sfx\":{},\"rewards\":{},\"pals\":{},\"hooks\":{},\"strs\":{},\"css\":{},\"kinds\":{{{}}}}}",
         list(&FX_KINDS),
         list(&SFX),
         list(&REWARDS),
         list(&PALS),
+        list(&HOOKS),
+        list(&STRS),
+        list(&CSS),
         kinds
     )
 }
