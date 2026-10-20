@@ -1,19 +1,23 @@
 // JS와 똑같은 숫자가 나오게: 반올림 · 정수 변환 · 클램프는 JS 규칙 그대로
-//  sin · exp 같은 함수는 Rust 것(fdlibm 계열)이 V8과 같은 값을 냄 (js/wasm.js로 픽셀 비교함)
-//  hypot만 V8 알고리즘이 달라서 브라우저 Math.hypot을 빌려 씀
+//  sin · exp 같은 초월 함수는 브라우저 Math를 빌려 씀 (Rust 것은 V8과 마지막 자리가 가끔 달라서)
 #[link(wasm_import_module = "m")]
 extern "C" {
+    fn jsin(x: f64) -> f64;
+    fn jcos(x: f64) -> f64;
+    fn jasin(x: f64) -> f64;
+    fn jexp(x: f64) -> f64;
+    fn jpow(x: f64, y: f64) -> f64;
     fn jhypot2(x: f64, y: f64) -> f64;
     fn jhypot3(x: f64, y: f64, z: f64) -> f64;
 }
 
 pub const PI: f64 = std::f64::consts::PI;
 
-#[inline] pub fn sin(x: f64) -> f64 { x.sin() }
-#[inline] pub fn cos(x: f64) -> f64 { x.cos() }
-#[inline] pub fn asin(x: f64) -> f64 { x.asin() }
-#[inline] pub fn exp(x: f64) -> f64 { x.exp() }
-#[inline] pub fn pow(x: f64, y: f64) -> f64 { x.powf(y) }
+#[inline] pub fn sin(x: f64) -> f64 { unsafe { jsin(x) } }
+#[inline] pub fn cos(x: f64) -> f64 { unsafe { jcos(x) } }
+#[inline] pub fn asin(x: f64) -> f64 { unsafe { jasin(x) } }
+#[inline] pub fn exp(x: f64) -> f64 { unsafe { jexp(x) } }
+#[inline] pub fn pow(x: f64, y: f64) -> f64 { unsafe { jpow(x, y) } }
 #[inline] pub fn hypot(x: f64, y: f64) -> f64 { unsafe { jhypot2(x, y) } }
 #[inline] pub fn hypot3(x: f64, y: f64, z: f64) -> f64 { unsafe { jhypot3(x, y, z) } }
 
@@ -36,4 +40,18 @@ pub const PI: f64 = std::f64::consts::PI;
 // Uint8ClampedArray에 넣을 때: 0~255로 자르고 반은 짝수 쪽으로
 #[inline] pub fn u8c(x: f64) -> u8 {
     if !(x > 0.0) { 0 } else if x >= 255.0 { 255 } else { x.round_ties_even() as u8 }
+}
+
+// art.js mix() → hex(): 채널마다 반올림
+pub fn mix(a: [u8; 3], b: [u8; 3], t: f64) -> [u8; 3] {
+    let ch = |k: usize| clamp(round(a[k] as f64 + (b[k] as f64 - a[k] as f64) * t), 0.0, 255.0) as u8;
+    [ch(0), ch(1), ch(2)]
+}
+
+// 반투명 덧칠 (Uint8ClampedArray 반올림까지 같게): places.js cvBlend · 깔때기 put
+pub fn blend(d: &mut [u8], q: usize, c: [u8; 3], a: f64) {
+    let a0 = d[q + 3] as f64 / 255.0; let ao = a + a0 * (1.0 - a);
+    if ao <= 0.0 { return; }
+    for k in 0..3 { d[q + k] = u8c((c[k] as f64 * a + d[q + k] as f64 * a0 * (1.0 - a)) / ao); }
+    d[q + 3] = u8c(ao * 255.0);
 }

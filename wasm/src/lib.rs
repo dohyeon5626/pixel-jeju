@@ -3,8 +3,10 @@
 mod basalt;
 mod cave;
 mod funnel;
+mod fx;
 mod js;
 mod noise;
+mod player;
 mod tree;
 
 use std::slice::{from_raw_parts, from_raw_parts_mut};
@@ -53,3 +55,22 @@ pub unsafe extern "C" fn funnel(d: *mut u8, cw: i32, chh: i32, ox: f64, oy: f64,
 pub unsafe extern "C" fn tree_blobs(d: *mut u8, size: i32, blobs: *const f64, n: usize, rcx: f64, rcy: f64, r: f64, fl: f64, ramp: *const u8, ramp_n: usize) {
     tree::blobs(from_raw_parts_mut(d, (size * size * 4) as usize), size, from_raw_parts(blobs, n * 3), rcx, rcy, r, fl, from_raw_parts(ramp, ramp_n * 3));
 }
+
+// 동굴 천장: edge는 열마다 천장 아래 끝 · cols: RGB 묶음 [하늘 위, 하늘 아래, 풀 3단, 흙, 바위]
+#[no_mangle]
+pub unsafe extern "C" fn cave_ceil(d: *mut u8, lw: i32, sh: f64, edge: *const f64, day: f64, night: i32, cols: *const u8) {
+    let c = from_raw_parts(cols, 21); let rgb = |k: usize| [c[k * 3], c[k * 3 + 1], c[k * 3 + 2]];
+    let o = cave::Ceil { edge: from_raw_parts(edge, lw as usize), day, night: night != 0, sky_t: rgb(0), sky_b: rgb(1), gr: [rgb(2), rgb(3), rgb(4)], dirt: rgb(5), rock: rgb(6) };
+    cave::ceil(from_raw_parts_mut(d, lw as usize * 200 * 4), lw, sh, &o);
+}
+#[no_mangle]
+pub unsafe extern "C" fn cave_shaft(d: *mut u8, lw: i32, sh: f64, r: u8, g: u8, b: u8, a0: f64) { cave::shaft(from_raw_parts_mut(d, lw as usize * 200 * 4), lw, sh, [r, g, b], a0); }
+
+// 파티클: 한 칸 8개씩 n칸 (fx.rs)
+#[no_mangle] pub unsafe extern "C" fn fx_step(b: *mut f64, n: usize, dt: f64, t: f64) { fx::step(from_raw_parts_mut(b, n * 8), dt, t); }
+
+// 숨비: 걷기는 새 vx를 돌려주고, 낙하는 PLAYER 칸(12개)을 고쳐 씀
+static mut PLAYER: [f64; 12] = [0.0; 12];
+#[no_mangle] pub extern "C" fn player_buf() -> *mut f64 { unsafe { std::ptr::addr_of_mut!(PLAYER) as *mut f64 } }
+#[no_mangle] pub extern "C" fn player_walk(vx: f64, dir: f64, on_ground: i32, speed_up: f64, dt: f64) -> f64 { player::walk(vx, dir, on_ground != 0, speed_up, dt) }
+#[no_mangle] pub unsafe extern "C" fn player_fall() { player::fall(&mut *std::ptr::addr_of_mut!(PLAYER)); }

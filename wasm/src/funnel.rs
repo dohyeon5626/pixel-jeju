@@ -10,20 +10,11 @@ pub fn set_pal(slot: usize, c: &[u8]) { unsafe { PAL[slot] = c.chunks(3).map(|c|
 fn pal(slot: usize) -> &'static [[u8; 3]] { unsafe { &(*std::ptr::addr_of!(PAL))[slot] } }
 fn pick(p: &[[u8; 3]], v: f64) -> [u8; 3] { p[clamp((v * p.len() as f64).floor(), 0.0, (p.len() - 1) as f64) as usize] }
 
-// art.js mix() → hex(): 채널마다 반올림
-fn mix(a: [u8; 3], b: [u8; 3], t: f64) -> [u8; 3] {
-    let ch = |k: usize| clamp(round(a[k] as f64 + (b[k] as f64 - a[k] as f64) * t), 0.0, 255.0) as u8;
-    [ch(0), ch(1), ch(2)]
-}
-
 struct Buf<'a> { d: &'a mut [u8], cw: i32, chh: i32 }
 impl Buf<'_> {
-    // 겹쳐 칠하기 (알파 합성 · Uint8ClampedArray 반올림까지 같게)
     fn put(&mut self, x: i32, y: i32, c: [u8; 3], a: f64) {
         if x < 0 || y < 0 || x >= self.cw || y >= self.chh || a <= 0.02 { return; }
-        let q = ((y * self.cw + x) * 4) as usize; let aa = min(1.0, a); let a0 = self.d[q + 3] as f64 / 255.0; let ao = aa + a0 * (1.0 - aa);
-        for k in 0..3 { self.d[q + k] = u8c((c[k] as f64 * aa + self.d[q + k] as f64 * a0 * (1.0 - aa)) / ao); }
-        self.d[q + 3] = u8c(ao * 255.0);
+        blend(self.d, ((y * self.cw + x) * 4) as usize, c, min(1.0, a));
     }
 }
 

@@ -197,3 +197,68 @@ pub fn ground(d: &mut [u8], lw: i32, h: i32) {
         put(d, lw, ii, yy, cvc(clamp(v, 0.0, 1.0), if top { 0.6 } else { 0.3 }));
     } }
 }
+
+// cvCell: 보로노이 (가장자리까지 거리, 칸 번호) — 금 간 천장 판
+fn cell(u: f64, v: f64, seed: f64) -> (f64, f64) {
+    let (mut d1, mut d2, mut hid) = (9.0, 9.0, 0.0);
+    let gu = u.floor(); let gv = v.floor();
+    for a in -1..=1 { for b in -1..=1 {
+        let (a, b) = (a as f64, b as f64);
+        let cu = gu + a + hash2(gu + a, gv + b, seed); let cv = gv + b + hash2(gu + a, gv + b, seed + 1.0); let dd = hypot(u - cu, v - cv);
+        if dd < d1 { d2 = d1; d1 = dd; hid = hash2(gu + a, gv + b, seed + 2.0); } else if dd < d2 { d2 = dd; }
+    } }
+    (d2 - d1, hid)
+}
+
+// caveCeil 천장 · 구멍 너머 하늘: edge는 JS가 정한 천장 아래 끝 (열마다)
+pub struct Ceil<'a> { pub edge: &'a [f64], pub day: f64, pub night: bool, pub sky_t: [u8; 3], pub sky_b: [u8; 3], pub gr: [[u8; 3]; 3], pub dirt: [u8; 3], pub rock: [u8; 3] }
+
+pub fn ceil(d: &mut [u8], lw: i32, sh: f64, o: &Ceil) {
+    let hx0 = 284.0 + sh; let hx1 = 338.0 + sh; let hc = (hx0 + hx1) / 2.0; let hw = (hx1 - hx0) / 2.0;
+    let edge = |i: i32| o.edge[i.clamp(0, lw - 1) as usize];
+    let hole_bot = |i: i32| edge(i) - 5.0;
+    let in_hole = |i: i32, y: f64| { let hd = hole_bot(i); y < hd && (i as f64 - hc).abs() / hw < max(0.0, 1.0 - pow(y / hd, 3.0)).sqrt() * (1.0 + (vnoise(y * 0.35, if i as f64 > hc { 1.0 } else { 2.0 }, 7107.0) - 0.5) * 0.22) };
+    let star = [0xe8, 0xe0, 0xf0];
+    for ii in 0..lw {
+        let i = ii as f64; let e = o.edge[ii as usize];
+        let (l, _) = light(i - sh, e + 8.0, 1.0);
+        let mut y = 0.0;
+        while y <= e {
+            if in_hole(ii, y) {   // 구멍 너머: 하늘 → 맞은편 테두리 (풀 · 흙 · 바위)
+                let fr = hole_bot(ii) - y; let gl = 7.0 + round(vnoise(i * 0.25, 0.5, 7108.0) * 3.0);
+                let col = if fr > gl { if o.night && hash2(i, y, 7112.0) < 0.012 { star } else { mix(o.sky_t, o.sky_b, clamp(y / hole_bot(ii) * 1.2, 0.0, 1.0)) } }
+                    else if fr > gl - 2.0 { o.gr[1 + (hash2(i, y, 7109.0) < 0.3) as usize] } else if fr > gl - 4.0 { o.gr[0] } else if fr > 2.0 { o.dirt } else { o.rock };
+                put(d, lw, ii, y as i32, col);
+                if fr == gl + 1.0 && hash2(i, 3.0, 7110.0) < 0.45 { put(d, lw, ii, (y - (hash2(i, 4.0, 7111.0) * 3.0).floor()) as i32, o.gr[1]); }   // 풀잎이 하늘로 삐죽
+            } else {
+                let (cr, hid) = cell(i * 0.085, y * 0.16, 7104.0);
+                let mut v = 0.11 + hid * 0.09 + (vnoise(i * 0.2, y * 0.3, 7105.0) - 0.5) * 0.04;
+                if cr < 0.06 { v *= 0.45; } else if cr < 0.12 { v += 0.035; }
+                let rim = pow(clamp(1.0 - (e - y) / 10.0, 0.0, 1.0), 1.5); let nh = exp(-max(0.0, (i - hc).abs() - hw) / 5.0) * o.day * (if y < hole_bot(ii) + 3.0 { 1.0 } else { 0.4 });
+                v += rim * (0.15 + l * 0.5) + nh * 0.32;
+                put(d, lw, ii, y as i32, cvc(clamp(v, 0.0, 1.0), clamp(rim * l * 2.0 - nh * 1.6, -1.0, 1.0)));
+            }
+            y += 1.0;
+        }
+    }
+}
+
+// caveCeil 빛줄기: 구멍에서 바닥까지 비스듬히 4단계로 끊은 반투명 빛 (이미 그린 그림 위에)
+pub fn shaft(d: &mut [u8], lw: i32, sh: f64, lc: [u8; 3], a0: f64) {
+    let (t, b) = ([292.0, 330.0, 44.0], [252.0, 314.0, 192.0]);
+    let mut y = t[2];
+    while y < b[2] {
+        let k = (y - t[2]) / (b[2] - t[2]); let l = t[0] + (b[0] - t[0]) * k + sh; let r = t[1] + (b[1] - t[1]) * k + sh;
+        let mut i = l.floor();
+        while i <= r.ceil() {
+            let uu = (i - l) / (r - l); let e = clamp(min(uu, 1.0 - uu) / 0.18, 0.0, 1.0); let st = vnoise(uu * 6.5 - k * 1.2, k * 2.2, 7106.0);
+            let a = round(a0 * e * (0.5 + 0.5 * st) * (1.0 - k * 0.3) / (a0 / 4.0)) * (a0 / 4.0);
+            if a > 0.0 && i >= 0.0 && i < lw as f64 {
+                let p = ((y as i32 * lw + i as i32) * 4) as usize;
+                if p < d.len() { blend(d, p, lc, a); }
+            }
+            i += 1.0;
+        }
+        y += 1.0;
+    }
+}
