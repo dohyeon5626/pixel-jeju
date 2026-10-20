@@ -1,7 +1,6 @@
 // 천지연 휘어 든 절벽 면 밝기 (scn_place의 cj_mid가 부름): 열마다 밝기 f · 칠할 세로 범위를 받음 · 폭포 둘레는 물안개
 use crate::js::*;
 
-#[allow(clippy::too_many_arguments)]
 pub fn shade(d: &mut [u8], lw: i32, ia: i32, f: &[f64], y0: &[f64], y1: &[f64], cxa: f64) {
     for (c, &fc) in f.iter().enumerate() {
         let i = ia + c as i32;

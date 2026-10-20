@@ -618,7 +618,6 @@ class EventCut {
   inner() { return this.side > 0 ? this.x + 8 : this.x + this.img.width - 8; }
   get dir() { return -this.side; }
   get y0() { return GROUND + 6 - this.img.height + (this.sink || 0) - Math.round(this.jy || 0); }
-  eyePos() { const e = EVENTS[this.key].eyes, k = this.img.cell || 2; return e ? [this.x + Math.round((e[0][0] + e[1][0]) / 2 * k), this.y0 + e[0][1] * k + 1] : this.mouthPos(); }
   mouthPos() { return [this.x + Math.round(this.img.width * (this.side > 0 ? 0.4 : 0.6)), this.y0 + Math.round(this.img.height * 0.62)]; }
   headPos() { return [this.x + Math.round(this.img.width * (this.side > 0 ? 0.2 : 0.8)), this.y0 + 14]; }
   // ── 보스 모션: 공격마다 몸을 크게 써서 박동감 있게 ──
@@ -1374,7 +1373,6 @@ class PatHalmang extends PatEvent {
     }
     return out;
   }
-  nextCh(keepSpace) { this.chI = this.chI || 0; let ch; do { ch = LINE_G[this.chI++ % LINE_G.length]; } while (!keepSpace && !ch.trim()); return ch; }   // 문장 글자를 차례로
   beat() { const b = Sound.style === 'hiphop' && Sound.playing ? Sound.beat() : -1, c = this.clockT * this.bpm / 60; if (b >= 0) { this.bOff = b - c; return b; } return c + (this.bOff || 0); }
   update(dt) { this.clockT += dt / G.speed; super.update(dt); }
   act(a) {

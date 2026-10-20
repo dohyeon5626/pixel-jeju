@@ -24,7 +24,6 @@ struct Column {
     top_off: f64,
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn wall(md: &[u8], d: &mut [u8], w: i32, h: i32, x0: i32, x1: i32, y_top: f64, y_bot: f64, seed: f64, wxv: &[f64], o: &Opt) {
     let mut r = Rng::new(seed as u32);
     let ramp = o.ramp;

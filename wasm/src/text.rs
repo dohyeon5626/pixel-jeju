@@ -16,7 +16,6 @@ fn set(d: &mut [u8], ow: i32, i: i32, j: i32, c: [u8; 3]) {
 }
 
 // textSprite: 먹선(+ 아래 그림자) · 글자 색 · 다듬을 경계 상자 (bb: x0 · y0 · x1 · y1, 없으면 x1 = -1)
-#[allow(clippy::too_many_arguments)]
 pub fn sprite(a: &[u8], w: i32, h: i32, d: &mut [u8], ow: i32, outline: Option<[u8; 3]>, shadow: bool, fill: [u8; 3], bb: &mut [i32]) {
     d.fill(0);
     let o = |i, j| on(a, w, h, i, j, 110);
@@ -59,7 +58,6 @@ pub fn sprite(a: &[u8], w: i32, h: i32, d: &mut [u8], ow: i32, outline: Option<[
 }
 
 // wordSprite: 날아오는 말 글자 — 두꺼운 먹선 · 아래 그림자 · 아래 두 줄은 먹빛을 섞음 (출력 (w + 4) × (h + 6))
-#[allow(clippy::too_many_arguments)]
 pub fn word(a: &[u8], w: i32, h: i32, d: &mut [u8], edge: [u8; 3], shade: [u8; 3], col: [u8; 3], low: [u8; 3]) {
     d.fill(0);
     let o = |i, j| on(a, w, h, i, j, 0);

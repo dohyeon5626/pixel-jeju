@@ -298,7 +298,6 @@ fn basalt_rock(c: &mut Canvas, rx: f64, ry: f64, w: f64, hh: f64, st: &[Col], r:
     c.draw(&pb.sel_out(0.5).canvas(), rx, ry);
 }
 // 현무암 주상절리: 다각형 윤곽 안만 (기둥 칠하기는 basalt.rs) · warp: x0..=x1 휜 좌표
-#[allow(clippy::too_many_arguments)]
 fn basalt_wall(
     c: &mut Canvas,
     pts: &[(f64, f64)],

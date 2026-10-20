@@ -299,7 +299,6 @@ fn hiphop(s: i64, tempo: f64, var: usize) {
 }
 
 // 8분음표 한 칸(s)의 음표들 → events()
-#[allow(clippy::too_many_arguments)]
 pub fn step(s: i64, tempo: f64, calm: bool, hip: bool, key: f64, varied: bool, accent: bool, hip_var: usize) {
     st().ev.clear();
     if hip {

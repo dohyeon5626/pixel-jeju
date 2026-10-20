@@ -49,7 +49,6 @@ pub unsafe extern "C" fn set_pal(slot: usize, p: *const u8, n: usize) {
 }
 
 #[no_mangle]
-#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn funnel(
     d: *mut u8,
     cw: i32,
@@ -92,7 +91,6 @@ pub unsafe extern "C" fn player_fall() {
 
 // 글자: a는 알파 (w × h) · cols는 RGB 묶음 · bb는 경계 상자 4칸
 #[no_mangle]
-#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn text_sprite(
     a: *const u8,
     w: i32,
@@ -237,7 +235,6 @@ pub extern "C" fn music_song(k: i32) {
 }
 // 8분음표 한 칸의 음표 수 (음표는 music_buf에서 9칸씩)
 #[no_mangle]
-#[allow(clippy::too_many_arguments)]
 pub extern "C" fn music_step(s: f64, tempo: f64, calm: i32, hip: i32, key: f64, varied: i32, accent: i32, hip_var: i32) -> usize {
     music::step(s as i64, tempo, calm != 0, hip != 0, key, varied != 0, accent != 0, hip_var.max(0) as usize);
     music::events().len() / 9
