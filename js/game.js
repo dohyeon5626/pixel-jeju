@@ -874,7 +874,7 @@ const QUIZ = [
   { q: "'낭'은?", a: '나무', b: '낭떠러지' }, { q: "'어멍'은?", a: '어머니', b: '엄청' },
 ];
 class Answer {
-  constructor(text, x, ok) { this.text = text; this.x = x; this.y = GROUND - 50; this.ok = ok; this.t = 0; this.spr = uiSprite(text, ok === undefined ? UI.gold : UI.gold); }
+  constructor(text, x, ok) { this.text = text; this.x = x; this.y = GROUND - 50; this.ok = ok; this.t = 0; this.spr = uiSprite(text, UI.gold); }
   update(dt) { return WK.hzUpdate(this, 'answer', dt); }   // 움직임는 wasm/src/hz_item.rs
   box() { const s = this.spr; return { x: this.x - s.width / 2, y: this.y, w: s.width, h: s.bodyH }; }
   draw() {
@@ -916,7 +916,7 @@ class Suitcase {
 }
 // ── 똥돼지 질주 ──
 class Pig {
-  constructor(dir, off) { this.dir = dir; this.x = dir > 0 ? -16 - off : W + 16 + off; this.y = GROUND; this.vy = 0; this.bouncy = true; this.speed = (rand(175, 215) + G.diff * 12) * Math.min(1, 1.35 / G.speed); this.anim = Math.random() * 4; this.leap = Math.random() < 0.3 + G.diff * 0.08; this.leaped = false; this.dodged = false; this.bouncy = true; }
+  constructor(dir, off) { this.dir = dir; this.x = dir > 0 ? -16 - off : W + 16 + off; this.y = GROUND; this.vy = 0; this.bouncy = true; this.speed = (rand(175, 215) + G.diff * 12) * Math.min(1, 1.35 / G.speed); this.anim = Math.random() * 4; this.leap = Math.random() < 0.3 + G.diff * 0.08; this.leaped = false; this.dodged = false; }
   update(dt) { return WK.hzUpdate(this, 'pig', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_ground.rs
   boxes() { return WK.hzBoxes(this, 'pig'); }
   draw() { const f = PIG[Math.floor(this.anim) % 4][this.dir > 0 ? 'r' : 'l'], bob = this.leap && !this.leaped ? -Math.round(Math.abs(Math.sin(this.anim * 1.57)) * 3) : 0; drawShadow(this.x, 20); g.drawImage(f, Math.round(this.x - f.ax), Math.round(this.y - f.ay) + bob); }
