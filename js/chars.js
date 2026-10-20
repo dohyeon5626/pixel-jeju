@@ -6,14 +6,8 @@
 'use strict';
 
 // 캐릭터용 팔레트 (Rust도 이 C를 그대로 받아 씀)
-C.peach = muteAll(['#a8503e', '#d9806a', '#f4b49a', '#ffdcc8']);
 C.hide = muteAll(['#33191e', '#5a2e22', '#8a4a2c', '#b86e3c', '#dc9a60']);   // 조랑말
-C.tan = muteAll(['#6a3030', '#a85a46', '#d48a66', '#efb48e']);
-C.mint = muteAll(['#24585a', '#3f8a80', '#7cc4a8', '#c4ecd4']);
-C.straw = muteAll(['#4a2a1e', '#7a4a2a', '#b07a42', '#dcae6a']);
 C.teal = muteAll(['#173c4a', '#22636e', '#33938f', '#62c4b0', '#b4ecd8']);
-C.hair = muteAll(['#2e1620', '#4e2626', '#7a3e2e', '#a86040']);
-C.cream = muteAll(['#7a5a42', '#b8946c', '#e2c79a', '#fff0d0']);
 C.suit = muteAll(['#12141c', '#1c2030', '#2a3048', '#435074', '#6c7ca8']);   // 숨비 고무 잠수복
 
 // 고정 스프라이트 전부 (캐릭터 · 소품은 여기, 적 · 아이템은 game.js · boss.js에서 꺼내 씀)

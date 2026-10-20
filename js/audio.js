@@ -231,7 +231,6 @@ const Sound = (() => {
     init, sfx, startMusic, stopMusic, setTempo, setMuted, setKey, setSong, duck, ambience, setSpace, suspend, resume,
     setAccent(v) { accent = !!v; },
     get tempo() { return tempo; },
-    get song() { return songKey; },
     get muted() { return muted; },
     get playing() { return playing; },
     get running() { return !!ac && ac.state === 'running'; },   // 브라우저가 소리를 막고 있으면 false (첫 입력 전)

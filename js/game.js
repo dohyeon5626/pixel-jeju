@@ -272,7 +272,7 @@ const dexCount = () => Object.keys(PATTERNS).filter(k => SEEN[k]).length;
 
 function newWorld() {
   return {
-    t: 0, stage: 1, mode: 'intro', modeT: 0, diff: 0, arenaR: W - 8 - EDGE, arenaL: 8 + EDGE, up: {},
+    t: 0, mode: 'intro', modeT: 0, diff: 0, arenaR: W - 8 - EDGE, arenaL: 8 + EDGE, up: {},
     phase: 0, phaseTarget: 0, hp: 7, maxHp: 7, ammo: 15, score: 0, combo: 0, comboT: 0, bestCombo: 0,
     dodges: 0, stomps: 0, hitsTaken: 0, stageHits: 0,
     hz: [], spawnQ: [], shots: [], pickups: [], fx: [], bgfx: [], pops: [], ghosts: [], lights: [], warnings: [], decals: [],
@@ -1304,7 +1304,7 @@ class PatHalmang extends PatEvent {
     }
     else if (a.k === 'bars') {
       // 다음 박에 솟는 막대 한 줄: 홀짝 줄이 16px씩 엇갈려 박자마다 자리를 옮기거나 뛰어야 함
-      const next = Math.max(Math.ceil(this.beat()) + 1, Math.ceil(this.lineEnd ?? 0)), off = a.i % 2 ? 16 : 0, clock = () => this.beat();   // 다음 줄은 앞 줄이 끝난 바로 다음 정박에 이어서 (바닥 표시는 1박 이상 먼저)
+      const next = Math.max(Math.ceil(this.beat()) + 1, Math.ceil(this.lineEnd ?? 0)), clock = () => this.beat();   // 다음 줄은 앞 줄이 끝난 바로 다음 정박에 이어서 (바닥 표시는 1박 이상 먼저)
       // 사투리 한 줄: 문장을 읽는 순서대로(왼쪽 → 오른쪽) 한 글자씩 차례로 솟음 — 바닥 표시가 먼저 다 깔리고, 솟는 순서가 늘 같아 미리 읽고 피할 수 있음
       //  줄은 단어 단위로 끊고(낱말이 쪼개지지 않게), 띄어쓰기 자리는 빈칸 · 앞 줄이 다 솟은 뒤에 다음 줄
       if ((this.lineEnd ?? -1) - 1 <= this.beat()) {
@@ -1317,7 +1317,7 @@ class PatHalmang extends PatEvent {
           const at = a.mode === 'drop' ? next + j * 0.1 : a.mode === 'sweep' ? next + j * 0.125 : next + Math.floor(j / 4) + SW[j % 4], acc = a.mode === 'sweep' ? j % 8 === 0 : a.mode === 'alt' && j % 4 === 0;
           last = at; if (ch.trim()) { const bb = new BeatBar(G.arenaL + 12 + j * sp, at, clock, false, ch); bb.acc = acc; bb.j = j; spawnHz(bb); }
         });
-        this.lineEnd = last + 0.25; void off;
+        this.lineEnd = last + 0.25;
       }
       B.talk(0.3);
       const [mx, my] = B.mouthPos();
@@ -2004,7 +2004,7 @@ const TIERS = [
 const GRADES = [[0, 'D', '관광객'], [600, 'C', '한달살이'], [1800, 'B', '제주 이주민'], [4000, 'A', '제주 도민'], [8000, 'S', '제주 삼춘'], [15000, 'SS', '해녀 대장'], [28000, 'MASTER', '돌하르방'], [45000, 'LEGEND', '한라산 신령']];
 function gradeOf(sc) { let r = GRADES[0]; for (const gq of GRADES) if (sc >= gq[0]) r = gq; return r; }
 function applyTier(i, instant) {
-  const T = TIERS[i]; G.tier = i; Sound.setKey && Sound.setKey([0, 2, 0, 5, 3, 7, 5][i] || 0, i >= 2); if (!B) Sound.setSong(T.phase >= 3 ? (NIGHT_SONG[T.theme] || 'night') : (THEME_CFG[T.theme] || {}).song || T.theme); G.stage = i + 1; G.speed = T.speed;
+  const T = TIERS[i]; G.tier = i; Sound.setKey([0, 2, 0, 5, 3, 7, 5][i] || 0, i >= 2); if (!B) Sound.setSong(T.phase >= 3 ? (NIGHT_SONG[T.theme] || 'night') : (THEME_CFG[T.theme] || {}).song || T.theme); G.speed = T.speed;
   if (i >= 2 && state === 'play') daily('tier');
   useTheme(T.theme); if (G.cave) G.caveCD = G.patCount + 12; G.cave = null; G.spot = 0; G.spotAt = 0; G.spotName = T.name; G.phaseTarget = T.phase; if (instant) G.phase = T.phase;
 }
@@ -3426,10 +3426,10 @@ function render() {
 //  화면 맞춤 · UI
 // ═════════════════════════════════════════════════════════════
 function fit() {
-  const box = document.getElementById('stageBox'), frame = 0;
+  const box = document.getElementById('stageBox');
   const cs = getComputedStyle(box), padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight), padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
   const fixedH = cs.flexGrow === '0', mainH = document.getElementById('main').clientHeight - (document.querySelector('.pad').offsetHeight || 0) - 28;
-  const bw = box.clientWidth - padX - frame, bh = (fixedH ? mainH : box.clientHeight) - padY - frame, dpr = window.devicePixelRatio || 1;
+  const bw = box.clientWidth - padX, bh = (fixedH ? mainH : box.clientHeight) - padY;
   // 꽉 채움: 폭을 창 비율에 맞춰 뒀으니 남는 건 짝수 맞춤 오차뿐 → 그만큼은 넘치게 (안 보이게 잘림) · 비율이 크게 다르면(세로 화면 · 판 도중 창 변경) 맞춤
   const fitS = Math.min(bw / W, bh / H), coverS = Math.max(bw / W, bh / H), s = coverS / fitS < 1.04 ? coverS : fitS;
   cv.style.width = W * s + 'px'; cv.style.height = H * s + 'px';
