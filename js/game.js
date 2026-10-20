@@ -401,34 +401,8 @@ class Rise { // 땅에서 솟는 돌하르방 (부술 수 없음)
     this.crack = [];
     for (const s of [-1, 1]) { let cx = 0, cy = 0; for (let i = 0; i < 10; i++) { cx += s * randi(1, 2); if (Math.random() < 0.45) cy = clamp(cy + randi(-1, 1), 0, 3); this.crack.push([cx, cy, i]); } }
   }
-  update(dt) {
-    this.t += dt;
-    if (this.phase === 'warn') {
-      if (Math.random() < dt * (this.chain ? 6 : 26)) fx({ x: this.x + rand(-8, 8), y: GROUND + 1, vx: rand(-12, 12), vy: rand(-80, -30), grav: 340, life: 0.45, col: pick([C.soil[2], C.soil[3], C.stone[2]]), size: randi(1, 2) });
-      if (!this.chain && Math.random() < dt * 8) Sound.sfx.crack();
-      light(this.x, GROUND, 4 + 12 * (this.t / this.warn), '#ffb040', 0.5);
-      if (this.t >= this.warn) {
-        this.phase = 'rise'; this.t = 0; const loud = !this.chain || this.idx % 4 === 0; Sound.sfx.rise(); if (loud) shake(this.chain ? 0.1 : 0.25);   // 행렬은 네 번째마다만 크게
-        if (loud) burst(this.x, GROUND, 14, [C.soil[2], C.soil[3], C.stone[2], C.stone[3]], 110, 0.7, 360, 'chunk');
-        dust(this.x - 8, GROUND, 4, -1, 1); dust(this.x + 8, GROUND, 4, 1, 1);
-      }
-    } else if (this.phase === 'rise') {
-      this.up = Math.min(1, easeBack(this.t / 0.16));
-      if (this.t >= 0.16) { this.phase = 'hold'; this.t = 0; this.up = 1; }
-    } else if (this.phase === 'hold') {
-      if (this.t >= this.hold) { this.phase = 'sink'; this.t = 0; }
-    } else {
-      this.up = Math.max(0, 1 - this.t / 0.4);
-      if (Math.random() < dt * 30) dust(this.x + rand(-9, 9), GROUND, 1);
-      if (this.up <= 0) return false;
-    }
-    return true;
-  }
-  boxes() {
-    if (this.phase === 'warn' || (this.phase === 'sink' && this.up < 0.5)) return NONE;
-    const h = 48 * this.up;
-    return [{ x: this.x - 9, y: GROUND - h, w: 18, h }];
-  }
+  update(dt) { return WK.hzUpdate(this, 'rise', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_ground.rs
+  boxes() { return WK.hzBoxes(this, 'rise'); }
   drawDecal() {
     const k = this.phase === 'warn' ? clamp(this.t / this.warn, 0, 1) : 1, n = Math.ceil(k * 10);
     const glow = this.phase === 'warn' && Math.floor(this.t * 14) % 2;
@@ -443,7 +417,7 @@ class Rise { // 땅에서 솟는 돌하르방 (부술 수 없음)
     g.drawImage(img, Math.round(this.x - img.width / 2), Math.round(GROUND + 2 - img.height * this.up) - over);
     g.restore();
   }
-  onShot(s) { spark(s.x, s.y); Sound.sfx.tink(); return true; }
+  onShot(s) { return WK.hzOn(this, 'rise', 'shot', s.x, s.y); }
 }
 
 class Hopper { // 꼬마 하르방: 밟거나 맞히면 부서짐
@@ -452,25 +426,10 @@ class Hopper { // 꼬마 하르방: 밟거나 맞히면 부서짐
     this.vx = dir * rand(52, 74) * (1 + G.diff * 0.06); this.x = x ?? (dir > 0 ? -10 - Math.abs(this.vx) * 0.6 * G.speed : W + 10 + Math.abs(this.vx) * 0.6 * G.speed); this.hop = G.diff >= 1 ? rand(220, 300) : rand(170, 250); this.vy = -this.hop * 0.6;   // 0.6초 동안 화면 끝 흙이 들썩이며 예고
     this.sq = 0; this.dodged = false; this.stompable = true;
   }
-  update(dt) {
-    this.t += dt;
-    if (this.dir > 0 ? this.x < -10 : this.x > W + 10) { this.x += this.vx * dt; if (Math.random() < dt * 14) fx({ x: this.dir > 0 ? rand(2, 8) : W - rand(2, 8), y: GROUND - 1, vx: this.dir * rand(5, 20), vy: -rand(30, 70), grav: 400, life: 0.3, kind: 'chunk', size: 1, col: pick([C.soil[3], C.stone[3]]) }); return !this.dead; }
-    this.vy += 760 * dt; this.x += this.vx * dt; this.y += this.vy * dt;
-    if (this.y >= GROUND) {
-      this.y = GROUND; this.vy = -this.hop * rand(0.85, 1.1); this.sq = 0.12;
-      if (this.x > 0 && this.x < W) { dust(this.x, GROUND, 3); Sound.sfx.hop(); }
-    }
-    this.sq -= dt;
-    return !this.dead && (this.dir > 0 ? this.x < W + 30 : this.x > -30);
-  }
-  boxes() { return [{ x: this.x - 7, y: this.y - 20, w: 14, h: 19 }]; }
-  kill(by) {
-    this.dead = true;
-    burst(this.x, this.y - 10, 16, [C.stone[1], C.stone[2], C.stone[3], C.stone[4]], 120, 0.7, 420, 'chunk');
-    dust(this.x, this.y, 5, 0, 1); Sound.sfx.shatter();
-    reward(by === 'stomp' ? 'stompKill' : 'shotKill', this.x, this.y - 26);
-  }
-  onShot() { this.kill('shot'); return true; }
+  update(dt) { return WK.hzUpdate(this, 'hopper', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_ground.rs
+  boxes() { return WK.hzBoxes(this, 'hopper'); }
+  kill(by) { WK.hzOn(this, 'hopper', by === 'stomp' ? 'stomp' : 'shot'); }
+  onShot() { return WK.hzOn(this, 'hopper', 'shot'); }
   draw() {
     if (this.dir > 0 ? this.x < -10 : this.x > W + 10) { if (Math.floor(this.t * 10) % 2 === 0) edgeChev(this.dir, GROUND - 10); return; }
     const img = MINI[this.dir > 0 ? 'r' : 'l'], air = GROUND - this.y;
@@ -487,41 +446,8 @@ class Meteor { // 한라산 화산탄 (동굴에서는 천장에서 떨어지는
     this.tx = Math.round(clamp(tx, 10, W - 10)); this.rock = !!themeCfg().indoor; const hl = (SCENES[Math.floor(G.phase)] || SCENES[0] || {}).halla, hcx = (hl && Number.isFinite(hl.cx) ? hl.cx : W * 0.62) - Math.round((20 + amb.camX) * LAYER_P.hall); this.sx = this.rock ? this.tx + rand(-4, 4) : lerp(hcx, this.tx, 0.3) + rand(-15, 15); this.sy = this.rock ? -VOFF + 2 : -VOFF - 20;
     this.fall = fall; this.t = 0; this.phase = 'fall'; this.dodged = false; this.x = this.sx; this.y = this.sy;
   }
-  update(dt) {
-    this.t += dt;
-    if (this.phase === 'fall') {
-      const e = Math.pow(clamp(this.t / this.fall, 0, 1), 1.6);
-      this.x = lerp(this.sx, this.tx, e); this.y = lerp(this.sy, GROUND - 5, e);
-      if (this.rock) { if (Math.random() < 0.4) fx({ x: this.x + rand(-3, 3), y: this.y - 4, vx: rand(-8, 8), vy: rand(-10, 10), life: 0.3, kind: 'chunk', size: 1, col: pick(['#3a3440', '#5a5260']) }); }
-      else {
-      if (Math.random() < 0.6) fx({ x: this.x + rand(-3, 3), y: this.y + rand(-3, 3), vx: rand(-10, 10), vy: rand(-30, -8), life: rand(0.2, 0.45), col: pick([C.yel[3], C.yel[2], C.org[3], C.org[2]]), size: randi(1, 3) });
-      if (Math.random() < dt * 30) fx({ x: this.x, y: this.y - 4, vx: rand(-6, 6), vy: -12, life: 0.7, kind: 'smoke', size: randi(0, 2) });
-      light(this.x, this.y, 26, '#ff9040', 0.9);
-      }
-      if (this.t >= this.fall) {
-        this.phase = 'boom'; this.t = 0; Sound.sfx.boom(); impact(this.tx, GROUND - 3, this.rock ? C.stone[3] : C.org[3], 1); if (Math.abs(this.tx - P.x) < 36 && !this.chain) hitstop(0.02, 0.6);   // 바로 옆에 떨어지면 짧게 멈칫
-        if (this.rock) { burst(this.tx, GROUND - 2, 14, ['#2a2630', '#3e3846', '#5a5262', '#7a7282'], 120, 0.7, 400, 'chunk'); for (let k = 0; k < 6; k++) fx({ x: this.tx + rand(-10, 10), y: GROUND - 4, vx: rand(-30, 30), vy: rand(-20, -5), life: rand(0.5, 0.9), kind: 'puff', size: randi(1, 2) }); } else {
-        burst(this.tx, GROUND - 2, 16, ['#3a2a2a', '#5a4040', C.org[3], C.yel[3]], 130, 0.8, 400, 'chunk');
-        fx({ x: this.tx, y: GROUND - 2, kind: 'ring', life: 0.35, col: C.yel[3] });
-        for (let k = 0; k < 6; k++) fx({ x: this.tx + rand(-8, 8), y: GROUND - 6, vx: rand(-20, 20), vy: rand(-30, -10), life: rand(0.6, 1), kind: 'smoke', size: randi(1, 3) });
-        G.decals.push({ x: this.tx, t: 0, life: 6 });
-        }
-      }
-    } else if (this.phase === 'boom') {
-      if (!this.rock) light(this.tx, GROUND - 8, 60 * (1 - this.t / 0.3), '#ffc060', 1);
-      if (this.t >= 0.3) { if (this.rock) return false; this.phase = 'lava'; this.t = 0; }
-    } else {
-      light(this.tx, GROUND, 22, '#ff6020', 0.7 * (1 - this.t / 1.5));
-      if (Math.random() < dt * 6) fx({ x: this.tx + rand(-7, 7), y: GROUND - 1, vy: rand(-30, -10), grav: 60, life: 0.4, col: pick([C.yel[3], C.org[3]]) });
-      if (this.t >= 1.5) return false;
-    }
-    return true;
-  }
-  boxes() {
-    if (this.phase === 'fall') return this.y > -VOFF + 10 ? [{ x: this.x - 5, y: this.y - 5, w: 10, h: 10 }] : NONE;
-    if (this.phase === 'boom') return this.t < 0.14 ? [{ x: this.tx - 15, y: GROUND - 18, w: 30, h: 18 }] : NONE;
-    return this.t < 1.2 ? [{ x: this.tx - 10, y: GROUND - 3, w: 20, h: 3 }] : NONE;
-  }
+  update(dt) { return WK.hzUpdate(this, 'meteor', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_ground.rs
+  boxes() { return WK.hzBoxes(this, 'meteor'); }
   drawDecal() {
     if (this.phase === 'fall') {
       if (this.y < -VOFF + 40) topMark(this.x, this.t);
@@ -550,18 +476,14 @@ class Meteor { // 한라산 화산탄 (동굴에서는 천장에서 떨어지는
 
 class Pony { // 조랑말 떼: 밟으면 튕겨 오름
   constructor(dir, off) { this.dir = dir; this.x = dir > 0 ? -18 - off : W + 18 + off; this.speed = (rand(140, 160) + G.diff * 8) * Math.min(1, 1.6 / G.speed); this.anim = Math.random() * 6; this.dodged = false; this.bouncy = true; }
-  update(dt) {
-    this.x += this.dir * this.speed * dt; this.anim += dt * this.speed / 11;
-    if (this.x > -10 && this.x < W + 10) { if (Math.random() < dt * 16) dust(this.x - this.dir * 12, GROUND, 1, -this.dir); Sound.sfx.gallop(); }
-    return this.dir > 0 ? this.x < W + 40 : this.x > -40;
-  }
-  boxes() { return [{ x: this.x - 12, y: GROUND - 15, w: 24, h: 14 }]; }
+  update(dt) { return WK.hzUpdate(this, 'pony', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_ground.rs
+  boxes() { return WK.hzBoxes(this, 'pony'); }
   draw() {
     const f = PONY[Math.floor(this.anim) % 6][this.dir > 0 ? 'r' : 'l'];
     drawShadow(this.x, 22);
     g.drawImage(f, Math.round(this.x - f.ax), Math.round(GROUND - f.ay));
   }
-  onShot(s) { spark(s.x, s.y); Sound.sfx.tink(); return true; }
+  onShot(s) { return WK.hzOn(this, 'pony', 'shot', s.x, s.y); }
 }
 
 class Pebble {
@@ -571,9 +493,9 @@ class Pebble {
     this.vx = dir * rand(170, 235) * Math.min(1, 1.6 / G.speed); this.x = dir > 0 ? -6 - Math.abs(this.vx) * 0.6 * G.speed : W + 6 + Math.abs(this.vx) * 0.6 * G.speed;   /* 화면 끝 예고 0.6초 */ this.ph = rand(0, 6); this.t = 0; this.dodged = false;   // 0.4초 동안 화면 끝 꺾쇠로 예고
     this.spr = pick(PEBBLES); this.spin = rand(9, 15);   // 돌마다 모양 · 크기 · 색이 다르고, 날아가며 데굴데굴
   }
-  update(dt) { this.t += dt; this.x += this.vx * dt; this.y0 = this.y0 ?? this.y; this.y = this.y0 + Math.sin(this.t * 14 + this.ph) * 1; return !this.dead && (this.dir > 0 ? this.x < W + 10 : this.x > -10); }
-  boxes() { return [{ x: this.x - 3, y: this.y - 3, w: 6, h: 5 }]; }
-  onShot() { this.dead = true; burst(this.x, this.y, 6, [C.stone[3], C.stone[4]], 60, 0.4, 300, 'chunk'); reward('shatter', this.x, this.y - 8); return true; }
+  update(dt) { return WK.hzUpdate(this, 'pebble', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_ground.rs
+  boxes() { return WK.hzBoxes(this, 'pebble'); }
+  onShot() { return WK.hzOn(this, 'pebble', 'shot'); }
   draw() {
     if (this.dir > 0 ? this.x < -4 : this.x > W + 4) { if (Math.floor(this.t * 12) % 2 === 0) edgeChev(this.dir, this.y); return; }
     g.fillStyle = 'rgba(255,244,224,0.6)';
@@ -584,14 +506,9 @@ class Pebble {
 }
 class Tewak {
   constructor(dir) { this.dir = dir; this.y = GROUND - 20; this.vx = dir * rand(110, 140) * Math.min(1, 1.6 / G.speed); this.x = dir > 0 ? -8 - Math.abs(this.vx) * 0.6 * G.speed : W + 8 + Math.abs(this.vx) * 0.6 * G.speed; this.t = 0; this.vy = 0; this.dodged = false; this.bouncy = true; }
-  update(dt) {
-    this.t += dt; this.x += this.vx * dt; if (this.dir > 0 ? this.x < -8 : this.x > W + 8) return !this.dead;
-    this.vy += 620 * dt; this.y += this.vy * dt;
-    if (this.y >= GROUND) { this.y = GROUND; this.vy = -rand(130, 180); }
-    return !this.dead && (this.dir > 0 ? this.x < W + 14 : this.x > -14);
-  }
-  boxes() { return [{ x: this.x - 5, y: this.y - 11, w: 10, h: 10 }]; }
-  onShot() { this.dead = true; burst(this.x, this.y - 6, 10, [C.org[2], C.org[3], '#ffffff'], 70, 0.4); reward('shatter', this.x, this.y - 14); return true; }
+  update(dt) { return WK.hzUpdate(this, 'tewak', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_ground.rs
+  boxes() { return WK.hzBoxes(this, 'tewak'); }
+  onShot() { return WK.hzOn(this, 'tewak', 'shot'); }
   draw() { if (this.dir > 0 ? this.x < -6 : this.x > W + 6) { if (Math.floor(this.t * 12) % 2 === 0) edgeChev(this.dir, GROUND - 14, C.org[3]); return; } drawShadow(this.x, 9); const img = TEWAK[((Math.floor(this.x / 6) * this.dir) % 4 + 4) % 4]; g.drawImage(img, Math.round(this.x - 6), Math.round(this.y - 11)); }
 }
 

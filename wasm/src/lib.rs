@@ -11,6 +11,9 @@ mod cave;
 mod cliff;
 mod funnel;
 mod fx;
+mod game;
+mod hz;
+mod hz_ground;
 mod js;
 mod music;
 mod noise;
@@ -240,4 +243,41 @@ pub extern "C" fn music_step(s: f64, tempo: f64, calm: i32, hip: i32, key: f64, 
 #[no_mangle]
 pub extern "C" fn music_buf() -> *const f64 {
     music::events().as_ptr()
+}
+
+// ── 게임 규칙: 장애물 (game · hz · hz_*) ──────────────────────
+static mut TABLES: String = String::new();
+// 이름표 · 장애물 필드 목록 (JSON) 위치 · 길이
+#[no_mangle]
+pub extern "C" fn hz_tables() -> *const u8 {
+    unsafe {
+        TABLES = hz::tables_json();
+        (*std::ptr::addr_of!(TABLES)).as_ptr()
+    }
+}
+#[no_mangle]
+pub extern "C" fn hz_tables_len() -> usize {
+    unsafe { (*std::ptr::addr_of!(TABLES)).len() }
+}
+// 장애물 한 스텝: f는 필드 목록대로 담은 값 (제자리에서 고침) · 살아 있으면 1
+#[no_mangle]
+pub unsafe extern "C" fn hz_update(kind: usize, f: *mut f64, n: usize, dt: f64, w: f64, px: f64) -> i32 {
+    game::set_ctx(w, px);
+    (hz::KINDS[kind].update)(from_raw_parts_mut(f, n), dt) as i32
+}
+// 판정 상자: out에 4칸씩 · 상자 수
+#[no_mangle]
+pub unsafe extern "C" fn hz_boxes(kind: usize, f: *const f64, n: usize, out: *mut f64) -> usize {
+    let b = (hz::KINDS[kind].boxes)(from_raw_parts(f, n));
+    let o = from_raw_parts_mut(out, b.len() * 4);
+    for (i, r) in b.iter().enumerate() {
+        o[i * 4..i * 4 + 4].copy_from_slice(r);
+    }
+    b.len()
+}
+// 맞았을 때 (ev: 0 귤 · 1 밟힘, sx · sy: 맞은 귤 자리) · 귤이 사라지면 1
+#[no_mangle]
+pub unsafe extern "C" fn hz_on(kind: usize, f: *mut f64, n: usize, ev: i32, sx: f64, sy: f64, w: f64, px: f64) -> i32 {
+    game::set_ctx(w, px);
+    hz::KINDS[kind].on.map(|on| on(from_raw_parts_mut(f, n), ev, sx, sy) as i32).unwrap_or(0)
 }

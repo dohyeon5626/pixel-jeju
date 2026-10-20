@@ -10,11 +10,11 @@
 let WK = null;
 const GAME_SCRIPTS = ['chars', 'portraits', 'boss', 'scenery', 'audio', 'game'];
 (async () => {
-  const url = 'wasm/jeju.wasm?v=278', imports = { m: { jsin: Math.sin, jcos: Math.cos, jasin: Math.asin, jexp: Math.exp, jpow: Math.pow, jatan2: Math.atan2, jhypot2: Math.hypot, jhypot3: Math.hypot } };
+  const url = 'wasm/jeju.wasm?v=279', imports = { m: { jsin: Math.sin, jcos: Math.cos, jasin: Math.asin, jexp: Math.exp, jpow: Math.pow, jatan2: Math.atan2, jhypot2: Math.hypot, jhypot3: Math.hypot }, g: gameImports() };
   try {
     let inst;
     if (location.protocol === 'file:') {   // file://에선 fetch가 막혀서 base64 사본(wasm/jeju-wasm.js)을 스크립트로 읽음
-      await new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'wasm/jeju-wasm.js?v=278'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+      await new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'wasm/jeju-wasm.js?v=279'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
       inst = (await WebAssembly.instantiate(Uint8Array.from(atob(window.JEJU_WASM), c => c.charCodeAt(0)), imports)).instance;
     } else {
       try { inst = (await WebAssembly.instantiateStreaming(fetch(url), imports)).instance; }
@@ -22,7 +22,7 @@ const GAME_SCRIPTS = ['chars', 'portraits', 'boss', 'scenery', 'audio', 'game'];
     }
     WK = wkApi(inst.exports);
   } catch (e) { console.error('WASM을 불러오지 못함', e); wasmMissing(); return; }
-  for (const n of GAME_SCRIPTS) { const s = document.createElement('script'); s.src = `js/${n}.js?v=278`; s.async = false; document.body.appendChild(s); }   // async = false: 붙인 순서대로 실행
+  for (const n of GAME_SCRIPTS) { const s = document.createElement('script'); s.src = `js/${n}.js?v=279`; s.async = false; document.body.appendChild(s); }   // async = false: 붙인 순서대로 실행
 })();
 // WASM 없이는 배경 · 물리가 없어 시작할 수 없음 (아주 오래된 브라우저 등)
 function wasmMissing() {
@@ -30,6 +30,27 @@ function wasmMissing() {
   d.textContent = '게임 엔진(WebAssembly)을 불러오지 못했어요. 새로 고침하거나 다른 브라우저로 열어 주세요.';
   d.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;background:#201614;color:#fff5e0;font:16px Galmuri11,sans-serif;z-index:99';
   document.body.appendChild(d);
+}
+
+// 게임 규칙(장애물)이 부르는 효과 · 난수: 게임 함수(fx · burst …)를 그 자리에서 바로 불러 원래와 같은 순서로
+//  색 번호: 0 이상은 0xRRGGBB, 음수는 팔레트 C[이름][칸] (이름표는 Rust game.rs가 줌)
+let HZ = null;
+const hzCol = c => c >= 0 ? '#' + (c | 0).toString(16).padStart(6, '0') : C[HZ.pals[(-c - 1) >> 4]][(-c - 1) & 15];
+function gameImports() {
+  return {
+    jrand: () => Math.random(),
+    jfx: (k, x, y, vx, vy, grav, drag, life, size, col, big, len) => { const o = { x, y, vx, vy, grav, drag, life, size, col: hzCol(col), kind: HZ.fx[k] }; if (big) o.big = true; if (len) o.len = len; fx(o); },
+    jburst: (x, y, n, spd, life, grav, k, nc, c0, c1, c2, c3) => burst(x, y, n, [c0, c1, c2, c3].slice(0, nc).map(hzCol), spd, life, grav, HZ.fx[k]),
+    jdust: (x, y, n, dir, big) => dust(x, y, n, dir, big),
+    jlight: (x, y, r, col, a) => light(x, y, r, hzCol(col), a),
+    jsfx: (id, arg) => Sound.sfx[HZ.sfx[id]](arg),
+    jshake: t => shake(t),
+    jspark: (x, y) => spark(x, y),
+    jimpact: (x, y, col, power, quiet) => impact(x, y, hzCol(col), power, !!quiet),
+    jhitstop: (t, cd) => hitstop(t, cd),
+    jreward: (k, x, y) => reward(HZ.rewards[k], x, y),
+    jdecal: (x, life) => G.decals.push({ x, t: 0, life }),
+  };
 }
 
 const SCENE_KIND = ['field', 'coast', 'beach', 'grove', 'iho', 'jeongbang', 'cheonji', 'cave'];
@@ -64,6 +85,14 @@ function wkApi(ex) {
   };
   const layers = jp => result(jp).layers;   // 배경 층: { 이름: 캔버스 }
   const sprite = jp => result(jp).tree;
+  // 장애물: JS 객체의 필드를 Rust 필드 목록대로 f64 칸에 담고 → 계산 → 다시 씀
+  //  숫자 · 참거짓 · 이름(단계 같은 문자열은 목록 안 번호) · 아직 없는 숫자는 NaN으로 넘기고 NaN이 오면 그대로 둠
+  HZ = JSON.parse(new TextDecoder().decode(u8(ex.hz_tables(), ex.hz_tables_len())));
+  const kindIdx = Object.fromEntries(Object.keys(HZ.kinds).map((k, i) => [k, i]));
+  const hzBuf = ex.alloc(64 * 8), boxBuf = ex.alloc(64 * 8);
+  const hzView = n => new Float64Array(ex.memory.buffer, hzBuf, n);
+  const pack = (h, K) => { const f = hzView(K.length); K.forEach(([n, t], i) => { const v = h[n]; f[i] = t === 'n' ? (v ?? NaN) : t === 'b' ? (v ? 1 : 0) : t.indexOf(v); }); };
+  const unpack = (h, K) => { const f = hzView(K.length); K.forEach(([n, t], i) => { const v = f[i]; if (t === 'n') { if (!Number.isNaN(v)) h[n] = v; } else h[n] = t === 'b' ? v !== 0 : t[v]; }); };
   let vortexSet = false;
   const vortexPal = () => { if (vortexSet) return; vortexSet = true; [Vortex.PAL, Vortex.DUST, Vortex.CLOUD].forEach((c, k) => run([rgbs(c)], p => ex.set_pal(k, p, c.length))); };
   return {
@@ -84,6 +113,14 @@ function wkApi(ex) {
       const n = ex.music_step(s, tempo, calm ? 1 : 0, hip ? 1 : 0, key, varied ? 1 : 0, accent ? 1 : 0, hipVar), b = new Float64Array(ex.memory.buffer, ex.music_buf(), n * 9);
       for (let i = 0; i < n; i++) play(...b.subarray(i * 9, i * 9 + 9));
     },
+    // 장애물 한 스텝 (살아 있으면 true) · 판정 상자 [{ x, y, w, h }] · 맞았을 때 (ev: 'shot' 귤 · 'stomp' 밟힘)
+    hzUpdate(h, kind, dt) { const K = HZ.kinds[kind]; pack(h, K); const r = ex.hz_update(kindIdx[kind], hzBuf, K.length, dt, W, P.x); unpack(h, K); return r !== 0; },
+    hzBoxes(h, kind) {
+      const K = HZ.kinds[kind]; pack(h, K); const n = ex.hz_boxes(kindIdx[kind], hzBuf, K.length, boxBuf); if (!n) return NONE;
+      const b = new Float64Array(ex.memory.buffer, boxBuf, n * 4), out = []; for (let i = 0; i < n; i++) out.push({ x: b[i * 4], y: b[i * 4 + 1], w: b[i * 4 + 2], h: b[i * 4 + 3] });
+      return out;
+    },
+    hzOn(h, kind, ev, sx = 0, sy = 0) { const K = HZ.kinds[kind]; pack(h, K); const r = ex.hz_on(kindIdx[kind], hzBuf, K.length, HZ.events.indexOf(ev), sx, sy, W, P.x); unpack(h, K); return r !== 0; },
     // 회오리 깔때기 한 장 (초당 30번)
     funnel(d, cw, chh, ox, oy, x, t, sp, dir, big, form, low, full) { vortexPal(); run([d.length], p => { ex.funnel(p, cw, chh, ox, oy, x, t, sp, dir, big ? 1 : 0, form, low, full); d.set(u8(p, d.length)); }); },
     // 파티클: 한 칸 8개 [x, y, vx, vy, life, grav, drag, 종류]로 묶어 한 번에 · 땅에 닿은 빗방울(종류 5)은 JS가 물방울을 튀김
