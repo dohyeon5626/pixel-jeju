@@ -2529,6 +2529,7 @@ let menuW = 112;
 const MENU_DESC = [() => '단계마다 빨라지는 기본 모드 · 최고 점수 도전', () => '명소 8구간 · 구간마다 이벤트와 강화 · 기록 따로', () => '조작 · 게임 요소 설명', () => '만난 밈 모아 보기 · 골라서 연습', () => '배경만 천천히 둘러보기', () => godMode ? '무적: 안 죽지만 기록 · 물질이 안 남아요' : '켜면 안 죽지만 기록 · 물질이 안 남아요'];
 function drawTitle() {
   if (mapView) { drawMapView(); return; }
+  if (howto || dexView) { if (howto) drawHowto(); else drawDex(); return; }   // 설명 · 도감은 화면을 덮는 판만 (넓은 창에서 로고 · 부제가 판 옆으로 비치지 않게)
   // 위쪽 어둡게 (로고 가독성)
   const gr = g.createLinearGradient(0, 0, 0, 110);
   gr.addColorStop(0, 'rgba(23,17,15,0.55)'); gr.addColorStop(1, 'rgba(23,17,15,0)');
@@ -2545,45 +2546,41 @@ function drawTitle() {
   drawStr(sub, 99, ry + 1, { font: 's', color: INK, align: 'center' }); drawStr(sub, 98, ry, { font: 's', color: '#f4ecdc', align: 'center' });
   g.restore();
   // 메뉴
-  if (!howto && !dexView) {
-    const items = ['게임 시작', `제주 일주${routeRec.best ? ' · ' + routeRec.best + '구간' : ''}`, '조작법', '용어 도감', '명소 구경', `무적 ${godMode ? 'ON' : 'OFF'}`];
-    const mw = menuW = Math.max(112, 20 + Math.max(...items.map(it => textW('▶ ' + it, 'b'))));
-    items.forEach((it, i) => {
-      if (titleT < 0.6 + i * 0.08) return;
-      const y = 106 + i * 14, sel = i === menuSel;
-      if (sel) uiBox(50, y - 3, mw, 16, UI.gold);
-      drawStr((sel ? '▶ ' : '   ') + it, 62 + (sel ? Math.floor(titleT * 4) % 2 : 0), y, { font: 'b', color: sel ? UI.gold : UI.text });
+  const items = ['게임 시작', `제주 일주${routeRec.best ? ' · ' + routeRec.best + '구간' : ''}`, '조작법', '용어 도감', '명소 구경', `무적 ${godMode ? 'ON' : 'OFF'}`];
+  const mw = menuW = Math.max(112, 20 + Math.max(...items.map(it => textW('▶ ' + it, 'b'))));
+  items.forEach((it, i) => {
+    if (titleT < 0.6 + i * 0.08) return;
+    const y = 106 + i * 14, sel = i === menuSel;
+    if (sel) uiBox(50, y - 3, mw, 16, UI.gold);
+    drawStr((sel ? '▶ ' : '   ') + it, 62 + (sel ? Math.floor(titleT * 4) % 2 : 0), y, { font: 'b', color: sel ? UI.gold : UI.text });
+  });
+  {
+    // 오늘의 물질 판 (타이틀 오른쪽)
+    ensureDaily(); const pin = easeOut(clamp((titleT - 0.7) / 0.35, 0, 1)), bx = W - 158 + Math.round((1 - pin) * 170), by = 64, wx = todayWx();
+    uiBox(bx, by - 18, 152, 16, UI.warnHi); if (Math.floor(titleT / 3) % 2 && wx.d) uiText(fitText(wx.d, 138), bx + 8, by - 15, { color: UI.text });   /* 날씨 효과 설명과 번갈아 */ else { const stk = DAILY.streak > 0 ? `연속 ${DAILY.streak}일` : ''; uiText(fitText(`오늘 ${wx.t}${DAILY.wxDone ? ' ✓' : ''}`, 132 - (stk ? textW(stk) + 6 : 0)), bx + 8, by - 15, { color: UI.gold }); if (stk) uiText(stk, bx + 146, by - 15, { color: UI.text, align: 'right' }); }
+    uiBox(bx, by, 152, 76, UI.gold);
+    uiText('오늘의 물질', bx + 8, by + 3, { font: 'b', color: UI.gold }); uiText(`진주 ${DAILY.pearl || 0}`, bx + 146, by + 5, { color: UI.text, align: 'right' });   // 오늘 최고 점수는 왼쪽 아래 BEST 판으로 (길어지면 제목과 겹쳐서)
+    DAILY.m.forEach((mid, i) => {
+      const M = MISSIONS.find(q => q.id === mid); if (!M) return; const y = by + 20 + i * 13, done = DAILY.p[i] >= M.n;
+      uiText((done ? '✓ ' : '· ') + M.t, bx + 8, y, { color: done ? UI.sub : UI.text });
+      uiText(`${DAILY.p[i]}/${M.n}`, bx + 146, y, { color: done ? UI.gold : UI.sub, align: 'right' });
     });
-    {
-      // 오늘의 물질 판 (타이틀 오른쪽)
-      ensureDaily(); const pin = easeOut(clamp((titleT - 0.7) / 0.35, 0, 1)), bx = W - 158 + Math.round((1 - pin) * 170), by = 64, wx = todayWx();
-      uiBox(bx, by - 18, 152, 16, UI.warnHi); if (Math.floor(titleT / 3) % 2 && wx.d) uiText(fitText(wx.d, 138), bx + 8, by - 15, { color: UI.text });   /* 날씨 효과 설명과 번갈아 */ else { const stk = DAILY.streak > 0 ? `연속 ${DAILY.streak}일` : ''; uiText(fitText(`오늘 ${wx.t}${DAILY.wxDone ? ' ✓' : ''}`, 132 - (stk ? textW(stk) + 6 : 0)), bx + 8, by - 15, { color: UI.gold }); if (stk) uiText(stk, bx + 146, by - 15, { color: UI.text, align: 'right' }); }
-      uiBox(bx, by, 152, 76, UI.gold);
-      uiText('오늘의 물질', bx + 8, by + 3, { font: 'b', color: UI.gold }); uiText(`진주 ${DAILY.pearl || 0}`, bx + 146, by + 5, { color: UI.text, align: 'right' });   // 오늘 최고 점수는 왼쪽 아래 BEST 판으로 (길어지면 제목과 겹쳐서)
-      DAILY.m.forEach((mid, i) => {
-        const M = MISSIONS.find(q => q.id === mid); if (!M) return; const y = by + 20 + i * 13, done = DAILY.p[i] >= M.n;
-        uiText((done ? '✓ ' : '· ') + M.t, bx + 8, y, { color: done ? UI.sub : UI.text });
-        uiText(`${DAILY.p[i]}/${M.n}`, bx + 146, y, { color: done ? UI.gold : UI.sub, align: 'right' });
-      });
-      // 스카프: ←→ 또는 이 줄을 눌러 바꾸기, 다음 색까지 남은 진주
-      const sc = SCARVES[clamp(DAILY.scarf | 0, 0, SCARVES.length - 1)], nx = SCARVES.find(q => q.cost > (DAILY.pearl || 0));
-      g.fillStyle = UI.hi; g.fillRect(bx + 6, by + 60, 140, 1);
-      g.fillStyle = mute(sc.c); g.fillRect(bx + 8, by + 64, 6, 6);
-      const scL = SCARVES.filter(q => q.cost <= (DAILY.pearl || 0)).length > 1 ? `◀ ${sc.n} ▶` : sc.n;
-      uiText(scL, bx + 18, by + 62, { color: UI.text });
-      uiText(nx ? fitText(`${nx.n}까지 진주 ${nx.cost - (DAILY.pearl || 0)}`, 146 - 24 - textW(scL)) : '스카프 모두 열림!', bx + 146, by + 62, { color: UI.sub, align: 'right' });   // 다음 스카프까지 남은 진주
-    }
-    if (titleT > 0.9) {
-      const lines = [best.score > 0 && [`BEST ${best.score}`, UI.gold], DAILY.best > 0 && [`오늘 ${DAILY.best}`, UI.text], [`도감 ${dexCount()}/${Object.keys(PATTERNS).length} · ★${starCount()}`, UI.text]].filter(Boolean);
-      uiBox(50, 190, 96, 4 + lines.length * 12);
-      lines.forEach(([t, c], i) => uiText(t, 98, 193 + i * 12, { color: c, align: 'center' }));
-    }
+    // 스카프: ←→ 또는 이 줄을 눌러 바꾸기, 다음 색까지 남은 진주
+    const sc = SCARVES[clamp(DAILY.scarf | 0, 0, SCARVES.length - 1)], nx = SCARVES.find(q => q.cost > (DAILY.pearl || 0));
+    g.fillStyle = UI.hi; g.fillRect(bx + 6, by + 60, 140, 1);
+    g.fillStyle = mute(sc.c); g.fillRect(bx + 8, by + 64, 6, 6);
+    const scL = SCARVES.filter(q => q.cost <= (DAILY.pearl || 0)).length > 1 ? `◀ ${sc.n} ▶` : sc.n;
+    uiText(scL, bx + 18, by + 62, { color: UI.text });
+    uiText(nx ? fitText(`${nx.n}까지 진주 ${nx.cost - (DAILY.pearl || 0)}`, 146 - 24 - textW(scL)) : '스카프 모두 열림!', bx + 146, by + 62, { color: UI.sub, align: 'right' });   // 다음 스카프까지 남은 진주
   }
-  if ((Sound.running || Sound.muted) && titleT > 0.9 && !howto && !dexView && MENU_DESC[menuSel]) drawStr(MENU_DESC[menuSel](), 300, H - 14, { font: 's', color: UI.sub, align: 'center' });   // 고른 메뉴 설명
+  if (titleT > 0.9) {
+    const lines = [best.score > 0 && [`BEST ${best.score}`, UI.gold], DAILY.best > 0 && [`오늘 ${DAILY.best}`, UI.text], [`도감 ${dexCount()}/${Object.keys(PATTERNS).length} · ★${starCount()}`, UI.text]].filter(Boolean);
+    uiBox(50, 190, 96, 4 + lines.length * 12);
+    lines.forEach(([t, c], i) => uiText(t, 98, 193 + i * 12, { color: c, align: 'center' }));
+  }
+  if ((Sound.running || Sound.muted) && titleT > 0.9 && MENU_DESC[menuSel]) drawStr(MENU_DESC[menuSel](), 300, H - 14, { font: 's', color: UI.sub, align: 'center' });   // 고른 메뉴 설명
   // 브라우저가 첫 입력 전까지 소리를 막음 → 소리가 켜지는 방법을 알려 줌
-  if (!Sound.running && !Sound.muted && titleT > 0.8 && !howto && !dexView) drawStr(TOUCH.matches ? '화면을 누르면 소리가 켜져요' : '아무 키나 누르면 소리가 켜져요', 300, H - 14, { font: 's', color: Math.floor(titleT * 1.5) % 2 ? UI.text : UI.sub, align: 'center' });
-  if (howto) drawHowto();
-  if (dexView) drawDex();
+  if (!Sound.running && !Sound.muted && titleT > 0.8) drawStr(TOUCH.matches ? '화면을 누르면 소리가 켜져요' : '아무 키나 누르면 소리가 켜져요', 300, H - 14, { font: 's', color: Math.floor(titleT * 1.5) % 2 ? UI.text : UI.sub, align: 'center' });
 }
 // 도감 칸에 들어가는 짧은 이름
 const DEX_NAME = { rise: '돌하르방', hop: '꼬마 하르방', suitcase: '캐리어', harvest: '감귤 따기', gull: '갈매기', car: '렌터카', pony: '조랑말', pig: '흑돼지', meteor: '화산탄', wind: '삼다도 바람', typhoon: '태풍', quiz: '제주어 퀴즈', halmang: '사투리 할머니', murang: '뭐랭하멘', plane: '참새 떼', parcel: '귤 택배', bee: '유채꽃 벌떼', glider: '패러글라이딩', dolphin: '남방큰돌고래', crow: '까마귀 떼', dialect: '제주어 비', seolmun: '설문대할망', knife: '칼 든 하르방' };
