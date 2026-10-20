@@ -2794,9 +2794,10 @@ function fit() {
   const sb = document.querySelector('.sysbar').getBoundingClientRect(), cr = cv.getBoundingClientRect();
   HUD_R = sb.width && sb.top < cr.top + 20 * s ? Math.max(0, Math.ceil((cr.right - sb.left) / s) + 1) : 0;
   if (edge !== EDGE) { EDGE = edge; if (G && !B) { G.arenaL = 8 + EDGE; G.arenaR = W - 8 - EDGE; } }
-  // 처음 화면에서 창 비율이 바뀌면 폭을 다시 정하려고 새로 고침 (판 도중엔 그대로)
-  clearTimeout(fit.re); if (viewW() !== W && (state === 'title' || state === 'loading') && !(G && G.go)) fit.re = setTimeout(() => {
-    if (viewW() === W || state !== 'title') return;
+  // 처음 화면에서 창 비율이 바뀌면 폭을 다시 정하려고 새로 고침 (판 도중엔 그대로) · 전체화면은 새로 고치면 풀리니 위아래 여백으로 둠
+  const full = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+  clearTimeout(fit.re); if (viewW() !== W && (state === 'title' || state === 'loading') && !(G && G.go) && !full()) fit.re = setTimeout(() => {
+    if (viewW() === W || state !== 'title' || full()) return;
     let last = 0; try { last = +sessionStorage.getItem('jeju.refit') || 0; sessionStorage.setItem('jeju.refit', Date.now()); } catch (_) { /* 저장소 사용 불가 */ }
     if (Date.now() - last > 5000) location.reload();   // 연달아 새로 고침되지 않게
   }, 600);
