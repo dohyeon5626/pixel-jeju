@@ -6,12 +6,7 @@
 'use strict';
 
 // 썩은 귤 (이벤트 투척물)
-const ROTTEN = (() => {
-  const pb = new PB(10, 10);
-  pb.ellipse(5, 5.5, 4, 3.6, (a, b, x, y) => { const v = sphereLight(a, b); let c = v < 0.4 ? '#3e4a2a' : v < 0.65 ? '#5e6e34' : '#8a9a48'; if (hash2(x >> 1, y >> 1, 3) < 0.2) c = '#2a3020'; return c; });
-  pb.set(5, 1, C.wood[0]); pb.set(6, 1, '#3e4a2a');
-  return selOut(pb).canvas();
-})();
+const ROTTEN = SPR.ROTTEN;
 
 const EVENT_H = 104;
 const EVENTS = {
@@ -102,10 +97,5 @@ function loadPortraits() {
   }
 }
 // 초상이 아직 없을 때: 담백한 실루엣 + 물음표
-const STAND_IN = (() => {
-  const w = 92, pb = new PB(w, EVENT_H), col = mute('#3a3446'), hi = mute('#4e4860');
-  pb.ellipse(46, 40, 22, 25, (a, b) => (a + b < -0.6 ? hi : col));
-  for (let y = 66; y < EVENT_H; y++) { const hw = Math.min(44, 14 + (y - 66) * 2.2); for (let x = 46 - hw; x <= 46 + hw; x++) pb.set(x, y, (x - 46) / hw + (y - 66) / 40 < -0.4 ? hi : col); }
-  return selOut(pb).canvas();
-})();
+const STAND_IN = SPR.STAND_IN;
 function portraitOf(key) { return PORTRAIT[key] || STAND_IN; }

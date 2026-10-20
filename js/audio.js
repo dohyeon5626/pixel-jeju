@@ -156,120 +156,26 @@ const Sound = (() => {
   };
 
   // ── 배경음악: 곡마다 5음계 동기(모티프)를 시드로 만들어 A · A' · B · 쉼 · C 로 엮어 감 ──
-  //    같은 판에서도 구간마다 멜로디 · 드럼 · 반주가 바뀌어 덜 지루하게. 단계(테마)마다 다른 곡.
+  //    무엇을 칠지(멜로디 · 화음 · 베이스 · 드럼)는 Rust(wasm/src/music.rs)가 정하고, 여기서는 받은 음표를 소리로 냄
   const n2f = n => 440 * Math.pow(2, (n - 69) / 12);
-  const MAJ = [0, 2, 4, 7, 9], MIN = [0, 3, 5, 7, 10];
-  const SONGS = {
-    title: { root: 57, scale: MAJ, prog: [0, 9, 5, 7], seed: 3, groove: 'calm', lead: 'triangle' },
-    field: { root: 57, scale: MAJ, prog: [0, 9, 5, 7], seed: 11, groove: 'pop', lead: 'p25' },          // 구좌 밭담길: 밝은 장5음계
-    coast: { root: 55, scale: MAJ, prog: [0, 5, 9, 7], seed: 23, groove: 'shuffle', lead: 'p25' },      // 성산 앞바다: 출렁이는 셔플
-    beach: { root: 53, scale: MIN, prog: [0, 8, 3, 10], seed: 37, groove: 'halftime', lead: 'triangle' }, // 협재 노을: 느긋한 하프타임
-    night: { root: 52, scale: MIN, prog: [0, 8, 10, 7], seed: 51, groove: 'drive', lead: 'p25' },       // 불의 밤: 달리는 단조
-    lofi: { root: 55, scale: MIN, prog: [0, 5, 3, 7], seed: 61, groove: 'lofi', lead: 'triangle' },      // 뭐랭하멘 방송
-    myth: { root: 50, scale: MIN, prog: [0, 0, 10, 7], seed: 71, groove: 'janggu', lead: 'pluck' },     // 설문대할망: 장구 굿거리
-    grove: { root: 59, scale: MAJ, prog: [0, 7, 9, 5], seed: 91, groove: 'pop', lead: 'triangle' },        // 귤밭: 따스한 장조
-    iho: { root: 54, scale: MAJ, prog: [0, 9, 7, 5], seed: 97, groove: 'shuffle', lead: 'p25' },        // 이호테우: 바닷바람 셔플
-    cave: { root: 49, scale: MIN, prog: [0, 10, 8, 7], seed: 103, groove: 'halftime', lead: 'pluck' },  // 만장굴: 울리는 단조
-    falls: { root: 56, scale: MAJ, prog: [0, 5, 7, 9], seed: 109, groove: 'halftime', lead: 'triangle' }, // 폭포: 시원하게 흐르는
-    taiko: { root: 52, scale: MIN, prog: [0, 3, 0, 10], seed: 83, groove: 'taiko', lead: 'p12' },       // 칼 든 하르방: 북 난타
-    nightsea: { root: 50, scale: MIN, prog: [0, 5, 8, 7], seed: 117, groove: 'shuffle', lead: 'p25' },   // 밤바다: 출렁이는 단조 셔플
-    stars: { root: 54, scale: MIN, prog: [0, 8, 3, 7], seed: 127, groove: 'drive', lead: 'pluck' },      // 별밤 · 달밤 폭포: 반짝이는 단조
-  };
-  const R32 = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
-  // 한 프레이즈 = 32칸(8분음표, 4마디): 모티프 · 변주 · 모티프 · 맺음
-  function makePhrase(song, seed, lift) {
-    const R = R32(seed), sc = song.scale, deg = () => Math.floor(R() * 7) - 1;
-    const motif = []; let d = 2 + lift;
-    for (let i = 0; i < 8; i++) { if (i > 0 && R() < (i % 2 ? 0.45 : 0.18)) { motif.push(null); continue; } d = Math.max(0, Math.min(6, d + (R() < 0.7 ? (R() < 0.5 ? -1 : 1) : deg()))); motif.push(d); }
-    const shift = R() < 0.5 ? 1 : 2, out = [];
-    for (let b = 0; b < 4; b++) for (let i = 0; i < 8; i++) {
-      let v = motif[i];
-      if (v !== null && b === 1) v += shift;
-      if (b === 3) v = i < 4 ? (motif[i] === null ? null : Math.max(0, motif[i] - 1)) : i === 4 ? lift : null;   // 맺음: 으뜸음으로 내려앉음
-      if (v !== null) v = Math.min(8, v);   // 너무 높아 귀가 따갑지 않게
-      out.push(v === null ? 0 : song.root + 12 + sc[v % 5] + 12 * Math.floor(v / 5));
-    }
-    return out;
-  }
-  const ARR = ['A', 'A2', 'B', 'A', 'C', 'B2'];   // 구간 순서 (한 구간 = 4마디)
-  let song = SONGS.field, songKey = 'field', phrases = null;
-  function buildSong(k) { song = SONGS[k] || SONGS.field; songKey = k; phrases = { A: makePhrase(song, song.seed, 0), B: makePhrase(song, song.seed + 7, 2), C: makePhrase(song, song.seed + 13, 1) }; }
+  const SONG_KEYS = ['title', 'field', 'coast', 'beach', 'night', 'lofi', 'myth', 'grove', 'iho', 'cave', 'falls', 'taiko', 'nightsea', 'stars'];   // music.rs SONGS와 같은 순서
+  const HIP_VARIANTS = 3;   // 할망 랩 붐뱁 비트 변주 수 (music.rs HIP)
+  let songKey = 'field';
+  function buildSong(k) { songKey = k; WK.musicSong(SONG_KEYS.indexOf(k)); }
   buildSong('field');
   let eSched = 60 / 138 / 2, accent = false;
   let playing = false, step = 0, nextT = 0, timer = 0, tempo = 138, calm = false, style = 'chip', t0 = 0, hipVar = 0;
 
-  // 붐뱁 힙합 비트 (할망 랩 타임) — 판마다 드럼 · 베이스 변주가 다름
-  const HIP = [
-    { kick: [0, 3], snare: [2, 6], roots: [45, 45, 38, 40] },
-    { kick: [0, 3, 4], snare: [2, 6], roots: [45, 43, 41, 40] },
-    { kick: [0, 5], snare: [2, 6, 7], roots: [45, 48, 43, 41] },
-  ];
-  function hiphopStep(s, t) {
-    const e = 60 / tempo / 2, k = s % 8, bar = Math.floor(s / 8) % 4, H = HIP[hipVar % HIP.length];
-    const at = t - ac.currentTime + (k % 2 ? e * 0.22 : 0);     // 스윙
-    const roots = H.roots;
-    if (H.kick.includes(k) || (k === 5 && bar === 3)) { tone({ f: 120, f2: 38, d: 0.22, type: 'sine', v: 0.85, at, bus: musicBus }); noise({ d: 0.012, v: 0.2, ft: 'highpass', f: 3000, at, bus: musicBus }); }
-    if (H.snare.includes(k)) { noise({ d: 0.16, v: 0.42, ft: 'bandpass', f: 1600, q: 0.8, at, bus: musicBus }); tone({ f: 190, f2: 120, d: 0.08, type: 'triangle', v: 0.3, at, bus: musicBus }); }
-    noise({ d: k % 2 ? 0.025 : 0.04, v: k % 2 ? 0.07 : 0.12, ft: 'highpass', f: 8000, at, bus: musicBus });
-    if (k === 0 || k === 3) tone({ f: n2f(roots[bar] - 12), d: e * 2.2, type: 'sine', v: 0.55, at, bus: musicBus });
-    if (k === 1 || k === 5) for (const iv of [0, 3, 7, 10]) tone({ f: n2f(roots[bar] + 12 + iv), d: e * 0.9, type: 'triangle', v: 0.07, at, bus: musicBus });
-    if (bar === 3 && k === 7) { noise({ d: 0.12, v: 0.2, ft: 'bandpass', f: 2600, f2: 500, q: 3, at, bus: musicBus }); tone({ f: 800, f2: 220, d: 0.1, type: 'sawtooth', v: 0.06, at, bus: musicBus }); }
-  }
   let key = 0, varied = false;
   function setKey(k, v) { key = k; varied = v; }
   function setSong(k) { if (k !== songKey) buildSong(k); }
-  const kick = (at, v = 0.6) => { tone({ f: 150, f2: 40, d: 0.12, type: 'sine', v, at, bus: musicBus }); noise({ d: 0.012, v: v * 0.25, ft: 'highpass', f: 3000, at, bus: musicBus }); };   // 딸깍 하는 머리 소리로 또렷하게
-  const snare = (at, v = 0.22) => { noise({ d: 0.08, v, ft: 'bandpass', f: 1800, q: 1, at, bus: musicBus }); tone({ f: 200, f2: 140, d: 0.05, type: 'triangle', v: v * 0.6, at, bus: musicBus }); };   // 몸통 소리
-  const hat = (at, v = 0.1) => noise({ d: 0.03, v, ft: 'highpass', f: 7000, at, bus: musicR });
-  function drums(g, k, bar, sec, at, e, fill) {
-    if (fill && bar === 3 && k >= 4) { snare(at, 0.12 + (k - 4) * 0.05); if (k % 2) snare(at + e / 2, 0.1); return; }   // 4마디마다 스네어 롤
-    if (g === 'pop') { if (k === 0 || k === 4 || (k === 7 && sec === 'B')) kick(at); if (k === 2 || k === 6) snare(at); if (k % 2 === 1 || sec === 'B') hat(at, k % 2 ? 0.1 : 0.06); }
-    else if (g === 'shuffle') { if (k === 0 || k === 5) kick(at); if (k === 2 || k === 6) snare(at); hat(at + (k % 2 ? e * 0.25 : 0), k % 2 ? 0.08 : 0.11); }
-    else if (g === 'halftime') { if (k === 0 || (k === 3 && bar % 2)) kick(at); if (k === 4) snare(at, 0.26); if (k % 2 === 0) hat(at, 0.07); }
-    else if (g === 'drive') { if (k % 2 === 0) kick(at, k % 4 === 0 ? 0.65 : 0.4); if (k === 2 || k === 6) snare(at, 0.25); hat(at, 0.09); }
-    else if (g === 'lofi') { if (k === 0 || k === 5) kick(at, 0.5); if (k === 4) snare(at, 0.16); if (k % 2 === 0) hat(at + e * 0.18, 0.05); if (k === 0) noise({ d: e * 8, v: 0.02, ft: 'bandpass', f: 3000, q: 0.5, at, bus: musicBus }); }
-    else if (g === 'janggu') { if (k === 0 || k === 3) tone({ f: 110, f2: 70, d: 0.18, type: 'sine', v: 0.55, at, bus: musicBus }); if (k === 2 || k === 5 || k === 7) noise({ d: 0.05, v: 0.2, ft: 'bandpass', f: 2600, q: 2, at, bus: musicBus }); if (k === 6) tone({ f: 180, f2: 130, d: 0.1, type: 'triangle', v: 0.3, at, bus: musicBus }); }
-    else if (g === 'taiko') { if (k % 2 === 0 || (k === 7 && bar % 2)) tone({ f: 95, f2: 50, d: 0.2, type: 'sine', v: k === 0 ? 0.8 : 0.5, at, bus: musicBus }); if (k === 3 || k === 7) noise({ d: 0.06, v: 0.25, ft: 'bandpass', f: 1200, q: 1.5, at, bus: musicBus }); }
-    else if (g === 'calm') { if (k === 0 && bar % 2 === 0) kick(at, 0.25); }
-  }
+  const WAVES = ['square', 'triangle', 'sine', 'sawtooth', 'p25', 'p12'], FILTERS = ['lowpass', 'bandpass', 'highpass'];   // music.rs 번호 순서
   function scheduleStep(s, t) {
-    if (style === 'hiphop') return hiphopStep(s, t);
-    const at = t - ac.currentTime, e = 60 / tempo / 2, S = calm ? SONGS.title : song;
-    const P = calm ? { A: makePhraseCache.title } : phrases;
-    const secIdx = Math.floor(s / 32) % ARR.length, sec0 = calm ? 'A' : ARR[secIdx], sec = sec0[0], pos = s % 32, k = s % 8, bar = Math.floor(pos / 8);
-    const tr = calm ? 0 : key + (varied && sec === 'B' ? (key >= 5 ? -7 : 5) : 0);
-    const chord = S.prog[bar % S.prog.length], r = S.root - 12 + chord + tr;
-    // 멜로디 (C 구간은 비우고 반주만 · A2/B2는 한 옥타브 위 대선율이 따라옴)
-    const m0 = (P[sec] || P.A)[pos];
-    if (m0 && sec !== 'C') {
-      const f = n2f(m0 + tr), type = S.lead === 'pluck' ? 'triangle' : S.lead;
-      if (calm) { if (s % 2 === 0) tone({ f, d: e * 1.6, type: 'triangle', v: 0.28, at, bus: musicBus }); }
-      else {
-        tone({ f, f2: S.lead === 'pluck' ? f * 0.985 : 0, d: S.lead === 'pluck' ? e * 0.7 : e * 0.9, type, v: type === 'triangle' ? 0.3 : 0.2, at, bus: musicL });
-        if (type !== 'triangle') tone({ f, d: e * 0.85, type, v: 0.08, at, bus: musicR, det: 11 });   // 코러스: 살짝 어긋난 두 번째 소리를 오른쪽에
-        tone({ f, d: e * 0.5, type, v: 0.06, at: at + e * 1.5, bus: musicR });   // 메아리
-        if (sec === 'B' && k % 2 === 0) tone({ f: f * (S.scale === MIN ? 1.189 : 1.26), d: e * 0.8, type: 'p12', v: 0.05, at, bus: musicL });   // B: 3도 위 화음
-        if (sec0.length > 1 && k % 2 === 0 && m0 + tr <= 84) tone({ f: f * 2, d: e * 0.6, type: 'p12', v: 0.06, at, bus: musicR });
-      }
-    }
-    // 화음 패드: 마디 머리에 깔리는 은은한 3화음 (구간 C는 더 길고 크게)
-    if (!calm && k === 0) { const third = S.scale === MIN ? 3 : 4; for (const iv of [0, third, 7]) tone({ f: n2f(r + 24 + iv), d: e * 7.5, type: 'triangle', v: sec === 'C' ? 0.05 : 0.03, at, bus: musicBus }); }
-    // 다음 구간으로 넘어가기 직전 마디: 차오르는 소리 (라이저) · 스네어 롤은 drums 쪽
-    const nextSec = ARR[(secIdx + 1) % ARR.length][0];
-    if (!calm && pos === 24 && nextSec !== sec) noise({ d: e * 8, v: 0.06, ft: 'bandpass', f: 500, f2: 5000, q: 2, at, bus: musicBus });
-    // 구간 머리: B로 들어가면 "드롭" — 묵직한 서브 + 심벌
-    if (!calm && pos === 0 && sec === 'B') { tone({ f: 70, f2: 32, d: 0.6, type: 'sine', v: 0.6, at, bus: musicBus }); noise({ d: 0.8, v: 0.12, ft: 'highpass', f: 4000, at, bus: musicBus }); }
-    // 베이스: 구간마다 걷는 모양이 다름
-    const bassPat = sec === 'B' ? [0, 12, 7, 12] : sec === 'C' ? [0, 0, 7, 5] : [0, 12, 0, 7];
-    if (k % 2 === 0) tone({ f: n2f(r + bassPat[(k >> 1) % 4]), d: e * 0.95, type: 'triangle', v: calm ? 0.3 : 0.45, at, bus: musicBus });
-    else if (!calm && sec === 'B' && (k === 3 || k === 7)) tone({ f: n2f(r + 12), d: e * 0.4, type: 'triangle', v: 0.25, at, bus: musicBus });   // B: 엇박 베이스로 들썩이게
-    // 아르페지오 (B · C 구간)
-    if (!calm && (sec === 'C' || sec0 === 'B2')) { const iv = (S.scale === MIN ? [0, 3, 7, 12] : [0, 4, 7, 12])[k % 4]; tone({ f: n2f(r + 24 + iv), d: e * 0.4, type: 'p12', v: 0.07, at, bus: musicR }); }
-    if (!calm && pos === 0 && secIdx % 2 === 0) noise({ d: 0.5, v: 0.08, ft: 'highpass', f: 5000, at, bus: musicBus });   // 구간 시작 심벌
-    drums(calm ? 'calm' : S.groove, k, bar, sec, at, e, !calm && sec !== 'C');
-    if (accent && !calm) hat(at + e / 2, 0.06);   // 16분 사이사이에 하이햇   // 박자 콤보가 붙으면 하이햇이 더해져 음악이 "맞물림"
+    const at = t - ac.currentTime, buses = [musicBus, musicL, musicR];
+    WK.musicStep(s, tempo, calm, style === 'hiphop', key, varied, accent, hipVar, (kind, f, f2, d, w, v, off, bus, x) => kind
+      ? noise({ d, v, ft: FILTERS[w], f, f2, q: x, at: at + off, bus: buses[bus] })
+      : tone({ f, f2, d, type: WAVES[w], v, at: at + off, bus: buses[bus], det: x }));
   }
-  const makePhraseCache = { title: makePhrase(SONGS.title, SONGS.title.seed, 0) };
   function pump() {
     if (!playing || !ac) return;
     if (nextT < ac.currentTime - 0.1) { const e = 60 / tempo / 2, k = Math.ceil((ac.currentTime + 0.05 - nextT) / e); step += k; nextT += k * e; }   // 멈췄다 풀려도 박자 위상 유지
@@ -284,7 +190,7 @@ const Sound = (() => {
     calm = !!opts.calm;
     tempo = Math.min(176, opts.tempo || 138);
     if (opts.song) setSong(opts.song);
-    if (opts.style === 'hiphop' && !(playing && style === 'hiphop')) hipVar = Math.floor(Math.random() * HIP.length);
+    if (opts.style === 'hiphop' && !(playing && style === 'hiphop')) hipVar = Math.floor(Math.random() * HIP_VARIANTS);
     const st = opts.style || 'chip';
     if (playing && st === style && !opts.restart) return;
     if (playing) newMusicBus();   // 곡을 바꿀 땐 앞 곡에서 예약해 둔 음을 끊음

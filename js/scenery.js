@@ -14,7 +14,6 @@ const PHASES = [
 
 for (const ph of PHASES) { ph.sky = ph.sky.map(c => mute(c, 0.8)); ph.cloud = ph.cloud.map(c => mute(c, 0.8)); ph.haze = mute(ph.haze, 0.8); if (ph.tint) ph.tint = mute(ph.tint, 0.85); }
 const LAYER_P = { hall: 0.08, oreum: 0.16, field: 0.3, near: 0.6, ground: 1, front: 1.3 };
-const layerW = p => Math.ceil(W + (WORLD_W - W) * p) + 4;
 
 // 테마별 성격: 바다 반짝임 · 파도 거품 · 화산(한라산) · 풍력발전기 · 실내(하늘 장식 없음) · 음악
 const THEME_CFG = {

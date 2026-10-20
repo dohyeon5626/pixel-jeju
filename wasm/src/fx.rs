@@ -8,11 +8,25 @@ const GROUND: f64 = 156.0;
 pub fn step(b: &mut [f64], dt: f64, t: f64) {
     for p in b.chunks_exact_mut(8) {
         let kind = p[7] as i32;
-        p[4] -= dt; p[3] += p[5] * dt;
-        if p[6] != 0.0 { p[2] *= 1.0 - p[6] * dt; p[3] *= 1.0 - p[6] * dt; }
-        if kind == 3 { p[3] += sin(t * 6.0 + p[0]) * 60.0 * dt; }
-        p[0] += p[2] * dt; p[1] += p[3] * dt;
-        if (kind == 1 || kind == 2) && p[5] != 0.0 && p[1] > GROUND + 1.0 { p[1] = GROUND + 1.0; p[3] *= -0.35; p[2] *= 0.6; }
-        if kind == 4 && p[1] >= GROUND - 1.0 { p[4] = 0.0; p[7] = 5.0; }
+        p[4] -= dt;
+        p[3] += p[5] * dt;
+        if p[6] != 0.0 {
+            p[2] *= 1.0 - p[6] * dt;
+            p[3] *= 1.0 - p[6] * dt;
+        }
+        if kind == 3 {
+            p[3] += sin(t * 6.0 + p[0]) * 60.0 * dt;
+        }
+        p[0] += p[2] * dt;
+        p[1] += p[3] * dt;
+        if (kind == 1 || kind == 2) && p[5] != 0.0 && p[1] > GROUND + 1.0 {
+            p[1] = GROUND + 1.0;
+            p[3] *= -0.35;
+            p[2] *= 0.6;
+        }
+        if kind == 4 && p[1] >= GROUND - 1.0 {
+            p[4] = 0.0;
+            p[7] = 5.0;
+        }
     }
 }

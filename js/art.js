@@ -67,12 +67,6 @@ function hash2(x, y, s = 0) {
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
-function vnoise(x, y, s = 0) {
-  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
-  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
-  const a = hash2(xi, yi, s), b = hash2(xi + 1, yi, s), c = hash2(xi, yi + 1, s), d = hash2(xi + 1, yi + 1, s);
-  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
-}
 
 // ── 색 계산 ──────────────────────────────────────────────────
 const _rgb = new Map();
@@ -102,25 +96,7 @@ class PB {
   in(x, y) { return x >= 0 && y >= 0 && x < this.w && y < this.h; }
   set(x, y, c) { x = Math.round(x); y = Math.round(y); if (c && this.in(x, y)) this.d[y * this.w + x] = c; }
   get(x, y) { x = Math.round(x); y = Math.round(y); return this.in(x, y) ? this.d[y * this.w + x] : null; }
-  del(x, y) { if (this.in(x, y)) this.d[y * this.w + x] = null; }
   rect(x, y, w, h, c) { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) this.set(x + i, y + j, c); }
-  // 팔다리: 두께 있는 선분. col은 색 또는 (t)=>색
-  limb(x0, y0, x1, y1, size, col) {
-    const n = Math.max(1, Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) * 1.5));
-    for (let k = 0; k <= n; k++) {
-      const t = k / n, x = x0 + (x1 - x0) * t, y = y0 + (y1 - y0) * t;
-      const c = typeof col === 'function' ? col(t) : col;
-      const o = (size - 1) / 2;
-      for (let j = 0; j < size; j++) for (let i = 0; i < size; i++) this.set(Math.round(x - o + i), Math.round(y - o + j), c);
-    }
-  }
-  // 채워진 타원 + 셰이딩 함수 (nx, ny는 -1..1)
-  ellipse(cx, cy, rx, ry, shade) {
-    for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++) for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
-      const nx = (x + 0.5 - cx) / rx, ny = (y + 0.5 - cy) / ry;
-      if (nx * nx + ny * ny <= 1) this.set(x, y, shade(nx, ny, x, y));
-    }
-  }
   canvas() {
     const c = mk(this.w, this.h), x = c.getContext('2d'), img = x.createImageData(this.w, this.h);
     for (let i = 0; i < this.d.length; i++) {
@@ -131,17 +107,6 @@ class PB {
     x.putImageData(img, 0, 0);
     return c;
   }
-}
-// 셀아웃 외곽선: 맞닿은 색을 진하게 어둡게. 빛 받는 위쪽은 살짝 덜 어둡게.
-// 톤 밴드 + 중간 톤을 섞어 부드럽게 (한 칸짜리 잡음 없이)
-const _bandMix = new Map();
-function band(ramp, v, x, y, spread = 0.7) {
-  const n = ramp.length, f = clamp(v, 0, 0.999) * (n - 1), i = Math.floor(f), t = Math.round((f - i) * 3) / 3;
-  if (t === 0 || i >= n - 1) return ramp[i];
-  if (t === 1) return ramp[i + 1];
-  const key = ramp[i] + ramp[i + 1] + t; let c = _bandMix.get(key);
-  if (!c) { c = mix(ramp[i], ramp[i + 1], t); _bandMix.set(key, c); }
-  return c;
 }
 // 2px 칸으로 다시 굽기: 칸 안에서 가장 많은 색을 고름 (평균내면 흐려지므로) + 대비 곡선으로 또렷하게
 const CONTRAST = new Uint8ClampedArray(256);
@@ -178,40 +143,12 @@ function chunk2(c, contrast = true) {
   x.putImageData(id, 0, 0);
   return c;
 }
-// 외곽선: 검은 테두리 대신 자기 색을 한 단계 어둡게만 (배경처럼 선 없는 그림체)
-const OUTLINE = 0.42;
-function selOut(pb, k = 0.72) {
-  k *= OUTLINE;
-  const o = new PB(pb.w, pb.h); o.d = pb.d.slice();
-  for (let y = 0; y < pb.h; y++) for (let x = 0; x < pb.w; x++) {
-    if (pb.get(x, y)) continue;
-    const b = pb.get(x, y + 1), a = pb.get(x, y - 1), l = pb.get(x - 1, y), r = pb.get(x + 1, y);
-    const nb = a || r || l || b;
-    if (!nb) continue;
-    o.d[y * pb.w + x] = mix(nb, INK, (b && !a) ? k - 0.1 : k);
-  }
-  return o;
-}
 function flipC(c) { const f = mk(c.width, c.height), x = f.getContext('2d'); x.translate(c.width, 0); x.scale(-1, 1); x.drawImage(c, 0, 0); return f; }
 function silhouette(c, col = '#ffffff') {
   const o = mk(c.width, c.height), x = o.getContext('2d');
   x.drawImage(c, 0, 0); x.globalCompositeOperation = 'source-in'; x.fillStyle = col; x.fillRect(0, 0, c.width, c.height);
   return o;
 }
-// 좌/우 프레임 쌍. ax, ay = 발밑 중앙 기준점
-function framePair(pb, ax, ay) {
-  const r = pb.canvas(), l = flipC(r);
-  r.ax = ax; r.ay = ay; l.ax = pb.w - 1 - ax; l.ay = ay;
-  return { r, l };
-}
-
-// 빛: 왼쪽 위 앞에서
-const LIGHT = (() => { const v = [-0.5, -0.7, 0.5], m = Math.hypot(...v); return v.map(a => a / m); })();
-function sphereLight(nx, ny) {
-  const nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
-  return clamp((nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2]) * 0.55 + 0.45, 0, 1);
-}
-
 // ── 픽셀 텍스트 (갈무리를 원래 크기로 찍고 이진화) ───────────────
 const FONTS = { s: { css: '10px Galmuri9', h: 10 }, m: { css: '12px Galmuri11', h: 12 }, b: { css: 'bold 12px Galmuri11', h: 12 } };
 const textCache = new Map();

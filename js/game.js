@@ -43,14 +43,7 @@ const overlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h 
 const easeOut = t => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
 const easeBack = t => { t = clamp(t, 0, 1); const s = 1.7; return 1 + (s + 1) * Math.pow(t - 1, 3) + s * Math.pow(t - 1, 2); };
 const HALLABONG_FAKE = (() => { const c = mk(HALLABONG.width, HALLABONG.height), x = c.getContext('2d'); x.drawImage(HALLABONG, 0, 0); x.globalCompositeOperation = 'source-atop'; x.fillStyle = 'rgba(90,120,40,0.45)'; x.fillRect(0, 0, c.width, c.height); return c; })();
-const DARK_TEX = (() => {   // 정전 어둠: 숨비 둘레만 보임 · 2px 칸 6계단 고리 (픽셀 그림체와 같게)
-  const c = mk(W * 2 + 40, H * 2 + 40), x = c.getContext('2d'), cw = c.width, ch = c.height, cx = cw / 2, cy = ch / 2, id = x.createImageData(cw, ch), u = new Uint32Array(id.data.buffer);
-  for (let y = 0; y < ch; y += 2) for (let i = 0; i < cw; i += 2) {
-    const t = clamp((Math.hypot(i + 1 - cx, y + 1 - cy) - 26) / 64, 0, 1), a = Math.round(Math.round(t * 6) / 6 * 0.88 * 255); if (!a) continue;
-    const v = (a << 24 | 16 << 16 | 6 << 8 | 6) >>> 0; u[y * cw + i] = v; u[y * cw + i + 1] = v; if (y + 1 < ch) { u[(y + 1) * cw + i] = v; u[(y + 1) * cw + i + 1] = v; }
-  }
-  x.putImageData(id, 0, 0); return c;
-})();
+const DARK_TEX = SPR.DARK_TEX;
 const TOUCH = matchMedia('(pointer: coarse)');
 const silOf = (img, col = '#ffffff') => { const k = '_sil' + col; return img[k] || (img[k] = silhouette(img, col)); };
 
@@ -488,7 +481,7 @@ class Hopper { // 꼬마 하르방: 밟거나 맞히면 부서짐
 
 // 동굴 낙석: 천장에서 떨어진 뾰족한 현무암 덩이
 // 만장굴 낙석: 천장에서 떨어지는 각진 현무암 덩이 6가지 (크기 · 모서리 · 색이 제각각, 등불빛 받은 것도) × 구르는 4칸
-const FALLROCKS = [[13, 5, 'cave', 2], [11, 5, 'cave', 1], [15, 6, 'warm', 2], [12, 4, 'cave', 0], [14, 5, 'warm', 1], [10, 5, 'cave', 1]].map(([size, sides, pal, pores], i) => [0, 1, 2, 3].map(r => stoneSprite(611 + i * 23, size, pal === 'warm' ? ['#1e1a1a', '#3a302c', '#5a4a40', '#7e6a58', '#a08a70'].map(c => mute(c)) : ['#1e1a24', '#332d3a', '#4e4656', '#6e6676', '#8e8696'].map(c => mute(c)), r * Math.PI / 2, { sides, pores })));
+const FALLROCKS = SPR.FALLROCKS;
 class Meteor { // 한라산 화산탄 (동굴에서는 천장에서 떨어지는 낙석)
   constructor(tx, fall) {
     this.tx = Math.round(clamp(tx, 10, W - 10)); this.rock = !!themeCfg().indoor; const hl = (SCENES[Math.floor(G.phase)] || SCENES[0] || {}).halla, hcx = (hl && Number.isFinite(hl.cx) ? hl.cx : W * 0.62) - Math.round((20 + amb.camX) * LAYER_P.hall); this.sx = this.rock ? this.tx + rand(-4, 4) : lerp(hcx, this.tx, 0.3) + rand(-15, 15); this.sy = this.rock ? -VOFF + 2 : -VOFF - 20;
@@ -665,23 +658,10 @@ class Rotten { // 썩은 귤
 
 // ── 줍는 것 ──────────────────────────────────────────────────
 // 떨어지는 귤: 빙글 도는 8프레임(꼭지가 돌아감, 빛은 늘 왼쪽 위) + 착지 찌그러짐 프레임
-const PICK_TANG = Array.from({ length: 8 }, (_, i) => [0, 1].map(q => {
-  const pb = new PB(13, 14), a = i * Math.PI / 4, cy = 8.2 + q;
-  pb.ellipse(6.5, cy, 4.2 + q, 3.8 - q, (nx, ny) => { const v = sphereLight(nx, ny); return C.org[v < 0.42 ? 1 : v < 0.78 ? 2 : 3]; });
-  if (Math.cos(a) > -0.3) { const x = Math.round(6 + Math.sin(a) * 3), y = Math.round(cy - Math.cos(a) * (4 - q)); pb.set(x, y, C.wood[1]); pb.rect(x + 1, y - 1, 2, 1, C.leaf[2]); }
-  return selOut(pb).canvas();
-}));
+const PICK_TANG = SPR.PICK_TANG;
 // 삼다수: 투명한 물병 + 파란 뚜껑 + 띠 라벨 (공중에 떠서 반짝임)
-const SAMDA = (() => {
-  const pb = new PB(9, 16), W4 = ['#6aa0c0', '#a8d4e4', '#d8f0f6', '#f4fcff'].map(c => mute(c)), CAP = mute('#2c5aa8');
-  pb.rect(3, 0, 3, 2, CAP); pb.set(3, 0, mute('#4a7ac8'));
-  pb.rect(3, 2, 3, 1, W4[1]); pb.set(2, 3, W4[1]); pb.set(6, 3, W4[1]);
-  for (let y = 4; y < 15; y++) for (let x = 1; x < 8; x++) pb.set(x, y, x === 1 ? W4[3] : x === 2 ? W4[2] : x === 7 ? W4[0] : W4[1]);
-  for (let x = 1; x < 8; x++) { pb.set(x, 8, '#f4f0e8'); pb.set(x, 9, x % 2 ? mute('#3a72c0') : '#f4f0e8'); pb.set(x, 10, '#f4f0e8'); }
-  for (let x = 2; x < 7; x++) pb.set(x, 15, W4[0]);
-  return selOut(pb).canvas();
-})();
-const DROP = (() => { const make = (full) => { const pb = new PB(7, 8), c = full ? [mute('#3a72c0'), mute('#6aa8d8'), mute('#bfe4f2')] : [mute('#3a3236'), mute('#4a4044'), mute('#5a5054')]; pb.set(3, 0, c[1]); pb.rect(2, 1, 3, 1, c[1]); for (let y = 2; y < 7; y++) for (let x = 1; x < 6; x++) if (!((y === 6) && (x === 1 || x === 5))) pb.set(x, y, x === 2 && y < 5 ? c[2] : x === 5 || y === 6 ? c[0] : c[1]); return selOut(pb).canvas(); }; return { on: make(true), off: make(false) }; })();
+const SAMDA = SPR.SAMDA;
+const DROP = SPR.DROP;   // { on, off }
 // 삼다수 세 병 → 삼다수 파도: 화면을 쓸며 지금 떠 있는 위험을 씻어 냄
 function samdaWave() {
   G.water = 0; G.wave = { t: 0 }; P.inv = Math.max(P.inv, 1.2); Sound.sfx.wave(); Sound.sfx.level(); shake(0.3); flashFx(0.06, '#d8f0ff', true);
@@ -691,18 +671,9 @@ function samdaWave() {
   addScore(200 + n * 30, P.x, P.y - 40);
 }
 // ── 새 아이템: 귤 망사리(귤 +5) · 오메기떡(6초 점수 2배) · 바람개비(8초 동안 귤을 끌어당김) ──
-const BASKET = (() => { const pb = new PB(14, 12), W2 = ['#5a3a22', '#7a5230', '#9a6c40'].map(c => mute(c));
-  for (let y = 5; y < 12; y++) for (let x = 1 + (y > 9 ? 1 : 0); x < 13 - (y > 9 ? 1 : 0); x++) pb.set(x, y, (x + y) % 3 === 0 ? W2[0] : (x + (y >> 1)) % 2 ? W2[2] : W2[1]);
-  for (const [cx, cy] of [[4, 4], [7, 3], [10, 4], [5.5, 6], [8.5, 6]]) pb.ellipse(cx, cy, 2.2, 2, (a, b) => C.org[sphereLight(a, b) < 0.4 ? 1 : sphereLight(a, b) < 0.75 ? 2 : 3]);
-  pb.set(7, 1, C.leaf[2]); return selOut(pb).canvas(); })();
-const OMEGI = (() => { const pb = new PB(14, 11), K = ['#4a5a2e', '#6a7e40', '#8ea25a'].map(c => mute(c));   // 흰 접시에 오메기떡 세 알 (썩은 귤과 헷갈리지 않게)
-  for (let x = 1; x < 13; x++) { pb.set(x, 9, '#c8c0b4'); if (x > 1 && x < 12) pb.set(x, 10, '#8a8478'); } for (let x = 2; x < 12; x++) pb.set(x, 8, '#f4ecdc');
-  for (const [cx, cy] of [[4, 6], [10, 6], [7, 3.6]]) { pb.ellipse(cx, cy, 2.6, 2.2, (a, b) => K[sphereLight(a, b) < 0.4 ? 0 : sphereLight(a, b) < 0.75 ? 1 : 2]); pb.set(Math.round(cx), Math.round(cy - 1), '#f0d890'); }
-  return selOut(pb).canvas(); })();
-const PINWHEEL = [0, 1].map(f => { const pb = new PB(13, 16); for (let y = 7; y < 16; y++) pb.set(6, y, C.wood[1]);
-  const cols = [C.red[3], C.yel[3], C.teal[3], C.org[3]];
-  for (let b = 0; b < 4; b++) { const a = b * Math.PI / 2 + f * Math.PI / 4; for (let r = 1; r < 6; r++) { const x = 6 + Math.round(Math.cos(a) * r), y = 6 + Math.round(Math.sin(a) * r); pb.set(x, y, cols[b]); pb.set(x + Math.round(Math.cos(a + 1.2)), y + Math.round(Math.sin(a + 1.2)), mix(cols[b], INK, 0.3)); } }
-  pb.set(6, 6, C.wood[0]); return selOut(pb).canvas(); });
+const BASKET = SPR.BASKET;
+const OMEGI = SPR.OMEGI;   // 흰 접시에 오메기떡 세 알 (썩은 귤과 헷갈리지 않게)
+const PINWHEEL = SPR.PINWHEEL;
 const ITEM_KINDS = ['basket', 'omegi', 'pinwheel', 'water', 'shield', 'bong'];
 class Pickup {
   constructor(kind, x, y, vx = 0, vy = 0) { Object.assign(this, { kind, x, y, vx, vy, life: 8, grounded: false, t: 0, phase: rand(0, 6.28), spin: rand(0, 1), sq: 0 }); }
@@ -1215,47 +1186,7 @@ class SplitZap extends Zap {
 // ── 할망 시그니처 1: 이퀄라이저 비트 바 — 랩 박자에 맞춰 땅에서 막대가 솟음 (한 박 전에 바닥이 깜빡) ──
 // 주상절리 기둥: 윗면은 육각 · 오각 다각형(살짝 내려다본 모양), 앞으로 보이는 면 2~3개, 면을 따라 휘는 가로 마디 · 숨구멍
 //  모양 4종을 미리 굽고, 기둥마다 높이를 달리해 실제 주상절리처럼 들쭉날쭉하게
-const BASALT_TOPS = [
-  [[1, 3], [4, 0], [10, 0], [13, 3], [10, 6], [4, 6]],          // 정육각
-  [[1, 2], [7, 0], [13, 2], [11, 6], [3, 6]],                    // 오각
-  [[1, 4], [3, 1], [9, 0], [13, 2], [12, 5], [6, 7]],            // 찌그러진 육각
-  [[1, 2], [5, 0], [12, 1], [13, 5], [8, 7], [2, 6]],            // 비스듬한 육각
-];
-const BASALTS = BASALT_TOPS.map((poly, vi) => {
-  const w = 15, h = 66, pb = new PB(w, h), S = C.stone;
-  const inPoly = (px, py) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > py) !== (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) c = !c; } return c; };
-  // 아랫 윤곽: 다각형에서 화면 쪽(아래)으로 보이는 꼭짓점 사슬 → 왼쪽 끝 ~ 오른쪽 끝
-  const minX = Math.min(...poly.map(p => p[0])), maxX = Math.max(...poly.map(p => p[0]));
-  const iL = poly.findIndex(p => p[0] === minX), iR = poly.findIndex(p => p[0] === maxX), chain = [];
-  for (let i = iL; ; i = (i - 1 + poly.length) % poly.length) { chain.push(poly[i]); if (i === iR) break; }
-  if (chain.reduce((a, p) => a + p[1], 0) / chain.length < 3) { chain.length = 0; for (let i = iL; ; i = (i + 1) % poly.length) { chain.push(poly[i]); if (i === iR) break; } }
-  const segOf = x => { for (let k = 0; k < chain.length - 1; k++) if (x <= chain[k + 1][0]) return k; return chain.length - 2; };
-  const lowY = x => { const k = segOf(x), [x0, y0] = chain[k], [x1, y1] = chain[k + 1]; return y0 + (y1 - y0) * (x1 === x0 ? 0 : (x - x0) / (x1 - x0)); };
-  const nSeg = chain.length - 1, faceCol = k => { const sl = (chain[k + 1][1] - chain[k][1]) / Math.max(1, chain[k + 1][0] - chain[k][0]); return sl > 0.4 ? mix(S[3], S[4], 0.35) : sl < -0.4 ? S[1] : S[2]; };   // 왼쪽으로 기운 면이 빛을 받음
-  const joints = []; for (let y = 9 + vi * 2; y < h - 4; y += 7 + ((y * 7 + vi * 3) % 5)) joints.push(y);
-  // 옆면
-  for (let x = minX; x <= maxX; x++) {
-    const ly = lowY(x), k = segOf(x), edge = chain.slice(1, -1).some(p => Math.abs(p[0] - x) < 0.5);
-    for (let y = Math.round(ly); y < h; y++) {
-      const d = y - ly; let c = faceCol(k);
-      if (edge) c = mix(S[0], S[1], 0.4);                                          // 면과 면 사이 모서리 (진하게 → 각이 보이게)
-      if (x === minX || x === maxX) c = S[0];
-      if (joints.some(j => Math.round(d) === j)) c = S[0];                          // 마디: 면 윤곽을 따라 휘어짐
-      else if (joints.some(j => Math.round(d) === j + 1) && !edge) c = mix(c, S[4], 0.4);
-      else if (hash2(x, y, 6 + vi) < 0.12) c = mix(c, S[0], 0.55);                 // 숨구멍
-      if (y > h - 9 && hash2(x, y, 8) < 0.35) c = mix(c, C.leaf[1], 0.5);         // 밑동 이끼
-      pb.set(x, y, c);
-    }
-  }
-  // 윗면: 밝은 다각형 + 진한 테두리로 육각 · 오각 모양이 또렷하게
-  for (let y = 0; y < 9; y++) for (let x = minX; x <= maxX; x++) {
-    if (!inPoly(x + 0.5, y + 0.5)) continue;
-    const rim = !inPoly(x - 0.5, y + 0.5) || !inPoly(x + 1.5, y + 0.5) || !inPoly(x + 0.5, y - 0.5) || !inPoly(x + 0.5, y + 1.5);
-    const lit = (x - minX) / (maxX - minX) < 0.5 && y < 3;
-    pb.set(x, y, rim ? S[0] : lit ? mix(S[4], '#ffffff', 0.2) : hash2(x, y, 4 + vi) < 0.15 ? S[3] : S[4]);
-  }
-  return selOut(pb).canvas();
-});
+const BASALTS = SPR.BASALTS;
 // 사투리 할머니의 한마디: 이 문장 글자가 한 자씩 땅에서 솟아오름 (공백 자리는 비어 있어 숨을 곳)
 const HALMANG_LINE = '쾅 ᄒᆞ는 소리 헨, "아이고, 베락 털어졈신가?" 영 걷어진 쥥은 몰르곡 경헨, 나왕 보고들랑 영헤연, 바...ᄇᆞᆰ도록 ᄌᆞᆷ ᄒᆞᆫᄌᆞᆷ들 안 잣수다, 이 셋동네 사름들.';
 const LINE_G = graphemes(HALMANG_LINE).filter(ch => !/[",.?…]/.test(ch));   // 글자와 띄어쓰기만 (문장부호는 빼고)
@@ -1427,13 +1358,7 @@ let SKILL_SEEN = {}; try { const v = JSON.parse(localStorage.getItem('jeju.skill
 
 // ── 할망 [귤밭 폭격]: 빨간 구역이 차오른 뒤 귤 상자가 그 구역을 통째로 내리찍음 ──
 let CRATE = null;
-function crateSprite() {
-  if (CRATE) return CRATE;
-  const pb = new PB(26, 20), Wd = C.wood;
-  for (let y = 6; y < 20; y++) for (let x = 0; x < 26; x++) pb.set(x, y, (y - 6) % 5 === 0 ? Wd[0] : x < 2 ? Wd[3] : x > 23 ? Wd[1] : Wd[2]);
-  for (const [cx, cy] of [[5, 6], [11, 5], [17, 6], [22, 6], [8, 3], [15, 2], [20, 3]]) pb.ellipse(cx, cy, 3.2, 2.8, (a, b) => C.org[sphereLight(a, b) < 0.4 ? 1 : sphereLight(a, b) < 0.75 ? 2 : 3]);
-  return (CRATE = selOut(pb).canvas());
-}
+function crateSprite() { return CRATE || (CRATE = WK.crate()); }
 class AreaSmash {
   constructor(x0, x1, delay) { this.x0 = x0; this.x1 = x1; this.delay = delay; this.t = 0; this.dodged = false; this.hitT = -1; this.y = -VOFF - 24; }
   hangY() { const e = easeOut(this.t / (0.35 * G.speed)), k = clamp(this.t / this.delay, 0, 1); return Math.round(-VOFF + 14 + 22 * e - (k > 0.75 ? 3 * (k - 0.75) / 0.25 : 0)); }
@@ -1775,13 +1700,7 @@ class PatCar extends Pattern {
 }
 
 // ── 유채꽃 벌떼: 모두 같은 물결길을 따라 날아옴 (높이 뜬 구간 아래는 안전 · 낮은 구간은 점프 · 귤로 잡기) ──
-const BEE = [0, 1].map(f => {
-  const pb = new PB(8, 7), Y = C.yel, K = C.stone;
-  pb.ellipse(4, 4.2, 3, 2.1, (nx, ny, x) => ((x + 1) % 3 === 0 ? K[0] : sphereLight(nx, ny) > 0.6 ? Y[3] : Y[2]));
-  pb.set(7, 4, K[0]);                                   // 침
-  const wy = f ? 1 : 2; pb.set(3, wy, C.cloth[2]); pb.set(4, wy, C.cloth[3]); pb.set(5, wy + (f ? 0 : 1), C.cloth[2]);
-  return framePair(selOut(pb), 4, 4);
-});
+const BEE = SPR.BEE;
 class Bee {
   constructor(dir, i, speed, ph) { this.dir = dir; this.i = i; this.x = dir > 0 ? -10 - i * 12 : W + 10 + i * 12; this.ph = ph; this.y = this.path(); this.speed = speed; this.t = 0; this.dodged = false; this.stompable = false; }
   path() { return GROUND - 24 + Math.sin(this.x * 0.045 + this.ph) * 14; }
@@ -1807,32 +1726,7 @@ class PatBee extends Pattern {
 
 // ── 참새 떼: 참새 몇 마리가 무리 지어 낮게(구르기로 밑을 통과) · 높게(가만히) 날아 지나감 ──
 //  참새: 밤색 정수리 · 흰 뺨에 검은 점 · 검은 턱 · 줄무늬 갈색 등 · 흰 날개띠 · 짧은 꼬리 (날갯짓 4칸)
-const SPARROW = (() => {
-  const K = { d: '#4e3424', b: '#8a5a3a', l: '#b48a62', u: '#c4b49c', c: '#8c4a2c', w: '#eee6d6', k: '#241c1a', g: '#5a504c' };
-  for (const k in K) K[k] = mute(K[k]);
-  const poly = (pb, pts, col) => {   // 다각형 채우기 (칸 가운데 기준)
-    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
-    for (let y = Math.floor(Math.min(...ys)); y <= Math.ceil(Math.max(...ys)); y++) for (let x = Math.floor(Math.min(...xs)); x <= Math.ceil(Math.max(...xs)); x++) {
-      let ins = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) { const [xi, yi] = pts[i], [xj, yj] = pts[j]; if ((yi > y + 0.5) !== (yj > y + 0.5) && x + 0.5 < (xj - xi) * (y + 0.5 - yi) / (yj - yi) + xi) ins = !ins; }
-      if (ins) pb.set(x, y, typeof col === 'function' ? col(x, y) : col);
-    }
-  };
-  const mkF = wing => {
-    const pb = new PB(17, 13);
-    poly(pb, [[5, 6.5], [0.5, 5.5], [0.5, 8], [5, 8.2]], (x, y) => y < 6.5 ? K.b : K.d);   // 짧은 꼬리
-    pb.ellipse(8.2, 7.2, 4.6, 2.5, (nx, ny) => ny > 0.1 ? K.u : (nx > -0.2 && nx < 0.3 && ny < -0.4) ? K.d : K.b);   // 몸통: 등 갈색(줄무늬) · 배 회갈색
-    pb.ellipse(12, 5.8, 2.4, 2.3, (nx, ny) => ny < -0.15 ? K.c : K.w);   // 머리: 밤색 정수리 · 흰 뺨
-    pb.set(12, 5, K.k); pb.set(13, 7, K.k); pb.set(12, 7, K.k);   // 눈 · 검은 턱
-    pb.set(14, 6, K.g); pb.set(15, 6, K.g);   // 짧고 굵은 부리
-    const tip = [[3.5, 0.2], [0.8, 4.2], [3.5, 11.8]][wing === 3 ? 1 : wing];   // 날개 끝 (위 · 가운데(활공) · 아래)
-    poly(pb, [[10.2, 6], [tip[0], tip[1]], [6.2, 7.2]], (x, y) => { const k = Math.hypot(x - tip[0], y - tip[1]); return k < 2.2 ? K.d : k > 5.2 ? K.l : K.b; });   // 뾰족한 날개: 끝은 짙고 어깨는 밝게
-    const mx = Math.round((10.2 + tip[0]) / 2), my = Math.round((6 + tip[1]) / 2); pb.set(mx, my, K.w);   // 흰 날개띠 한 점
-    return selOut(pb).canvas();
-  };
-  const r = [0, 1, 2, 1].map(mkF), l = r.map(flipC);
-  for (const f of r) { f.ax = 8; f.ay = 7; } for (const f of l) { f.ax = 8; f.ay = 7; }
-  return { r, l };
-})();
+const SPARROW = SPR.SPARROW;
 class Plane {   // 참새 무리 (낮게 2마리 · 높게 3마리 — 판정 폭은 예전 비행기와 같음)
   constructor(dir, low, speed) { this.dir = dir; this.low = low; this.y = low ? GROUND - 20 : GROUND - 44; this.x = dir > 0 ? -24 : W + 24; this.speed = speed; this.t = 0; this.warn = 0.7 * G.speed; this.dodged = false; this.birds = (low ? [[-7, 2], [7, -2]] : [[-13, 2], [0, -3], [13, 1]]).map(([ox, oy], i) => ({ ox, oy, ph: i * 1.3 + rand(0, 1) })); }
   update(dt) {
@@ -1876,15 +1770,7 @@ class PatPlane extends Pattern {
   }
 }
 // ── 귤 택배 왔수다: 그림자 자리에 상자가 곧게 떨어지고, 떨어진 상자는 밟거나 쏘면 귤이 쏟아짐 ──
-const PARCEL = (() => {
-  const pb = new PB(18, 15), K = ['#6a4a2e', '#8a6440', '#a8804e', '#c49a62'].map(c => mute(c));
-  for (let y = 2; y < 14; y++) for (let x = 1; x < 17; x++) pb.set(x, y, x < 3 ? K[3] : x > 14 ? K[1] : y === 2 ? K[3] : K[2]);
-  for (let x = 1; x < 17; x++) pb.set(x, 5, K[1]);                       // 뚜껑 접힌 선
-  for (let y = 2; y < 14; y++) pb.set(8, y, mix(K[2], '#d8c8a0', 0.4));   // 테이프
-  pb.rect(4, 8, 3, 3, C.org[2]); pb.set(5, 7, C.leaf[2]);                 // 귤 그림
-  pb.rect(10, 8, 4, 1, K[0]); pb.rect(10, 10, 3, 1, K[0]);                // 글씨 자리
-  return selOut(pb).canvas();
-})();
+const PARCEL = SPR.PARCEL;
 class Parcel {
   constructor(x, delay) { this.x = x; this.y = -VOFF - 16; this.t = 0; this.warn = delay; this.state = 'warn'; this.dodged = false; this.stompable = true; }
   update(dt) {
@@ -1923,19 +1809,7 @@ class PatParcel extends Pattern {
 // ── 밭담 바람구멍: 현무암 돌담이 옆에서 밀려옴 · 뚫린 구멍으로만 통과 (바닥 = 구르기, 가운데 = 점프, 위 = 2단 점프) ──
 const WALL_TOP = -VOFF - 4, WALL_H = GROUND - WALL_TOP;
 // ── 오름 패러글라이딩: 하늘에 뜬 낙하산은 밟으면 통통 튀는 징검다리 (밟으면 귤), 땅에는 꼬마 하르방 ──
-const GLIDER = (() => {
-  const pb = new PB(30, 24), A = C.teal, O = C.org;
-  for (let x = 2; x < 28; x++) {
-    const u = (x - 14.5) / 13, top = Math.round(2 + u * u * 5), st = Math.floor((x - 2) / 4) % 2, K = st ? A : O;
-    pb.set(x, top, K[3]); pb.set(x, top + 1, K[2]); pb.set(x, top + 2, x % 4 === 1 ? K[1] : K[2]); pb.set(x, top + 3, K[1]);
-  }
-  const L = mix(C.stone[3], C.cloth[3], 0.5);
-  for (const sx of [3, 9, 20, 26]) pb.limb(sx, 6 + (sx < 6 || sx > 23 ? 3 : 0), 14.5 + (sx < 15 ? -1 : 1), 16, 1, L);
-  pb.rect(13, 15, 3, 3, C.wood[1]); pb.set(14, 15, C.wood[2]);           // 머리 · 헬멧
-  pb.rect(13, 18, 3, 3, C.cloth[1]); pb.set(13, 18, C.cloth[2]);          // 몸
-  pb.set(12, 21, C.cloth[0]); pb.set(16, 21, C.cloth[0]);                 // 다리
-  return selOut(pb).canvas();
-})();
+const GLIDER = SPR.GLIDER;
 class Glider {
   constructor(dir, high, speed) { this.dir = dir; this.y0 = high ? GROUND - 140 : GROUND - 96; this.y = this.y0; this.x = dir > 0 ? -16 : W + 16; this.speed = speed; this.t = rand(0, 6); this.safe = true; this.bouncy = true; this.ambient = true; this.dodged = true; this.life = 10; }
   update(dt) {
@@ -1976,23 +1850,7 @@ function edgeChev(dir, y, col = C.red[3]) { if (G && G.dark > 0 && !edgeChev.flu
   for (const off of [0, 6]) { const x = dir > 0 ? 3 + EDGE + off : W - 4 - EDGE - off; for (const [c, o] of [[INK, 1], [off ? mix(col, INK, 0.3) : col, 0]]) { g.fillStyle = c; for (let i = 0; i < 4; i++) g.fillRect(x + dir * i - o, yy - 3 + i - o, 2 + 2 * o, 7 - 2 * i + 2 * o); } }
 }
 // ── 남방큰돌고래: 바다에서 솟아 포물선으로 넘어감 · 지나갈 길을 점선으로, 들어가고 나올 자리엔 물보라 고리 ──
-const DOLPHIN = [-0.6, 0, 0.6].map(ang => {
-  const w = 26, h = 18, pb = new PB(w, h), ca = Math.cos(ang), sa = Math.sin(ang), B = ['#34445a', '#506478', '#72889c', '#aebcc6'].map(c => mute(c));
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const dx = x + 0.5 - 13, dy = y + 0.5 - 9, u = dx * ca + dy * sa, v = -dx * sa + dy * ca;
-    let c = null;
-    const half = u > -10 && u < 9 ? 3.4 * Math.sqrt(Math.max(0, 1 - ((u + 0.5) / 9.6) ** 2)) : 0;
-    if (half > 0 && Math.abs(v + 0.2) <= half) c = v > half * 0.3 ? B[3] : v < -half * 0.45 ? B[1] : B[2];
-    if (u >= 8.5 && u < 11.5 && v > -0.6 && v < 1.2) c = B[2];                                        // 주둥이
-    if (u > -2.5 && u < 2 && v < -2.4 && v > -2.4 - (2 - Math.abs(u + 0.5)) * 1.4) c = B[1];        // 등지느러미
-    if (u <= -9.5 && u > -13 && Math.abs(v) < (-(u + 9.5)) * 1.2 + 0.5) c = B[1];                      // 꼬리
-    if (u > 2 && u < 5 && v > 1.2 && v < 2.6) c = B[1];                                                // 가슴지느러미
-    if (Math.round(u) === 6 && Math.round(v) === -1) c = INK;                                          // 눈
-    pb.set(x, y, c);
-  }
-  return selOut(pb).canvas();
-});
-const DOLPHIN_L = DOLPHIN.map(flipC);
+const { DOLPHIN, DOLPHIN_L } = SPR;   // 기울기 세 가지 (오른쪽 · 왼쪽)
 function splashFx(x, big = 1) {
   Sound.sfx.splash();
   fx({ x, y: GROUND - 1, kind: 'ring', life: 0.3, col: '#cfe4ec' });
@@ -2047,45 +1905,9 @@ class PatDolphin extends Pattern {
   }
 }
 // ── 까마귀 떼: 하늘 위에 앉아 노려보다가(조준선) 줄이 굳으면 그 길로 내리꽂음 ──
-const CROW = (() => {
-  const K = ['#1c1822', '#2c2634', '#40384c', '#5a5268'].map(c => mute(c));
-  const mkF = (wing) => {
-    const pb = new PB(18, 14);
-    pb.ellipse(8.5, 7.5, 4.6, 2.5, (a, b) => b < -0.35 ? K[2] : K[1]);
-    pb.ellipse(13, 6, 1.9, 1.7, (a, b) => b < -0.25 ? K[2] : K[1]);
-    pb.set(15, 6, '#5e5a52'); pb.set(16, 6, '#4a463e'); pb.set(15, 7, '#3e3a34');           // 부리
-    pb.set(13, 5, K[3]);                                                                    // 눈 반짝
-    pb.rect(1, 7, 3, 2, K[0]); pb.set(0, 8, K[0]);                                          // 꽁지
-    if (wing === 0) { pb.limb(9, 6, 5, 1, 2, K[2]); pb.limb(10, 6, 9, 0, 1, K[3]); }
-    else if (wing === 1) { pb.limb(9, 7, 4, 7, 2, K[2]); pb.set(3, 7, K[3]); }
-    else if (wing === 2) { pb.limb(9, 8, 6, 13, 2, K[2]); pb.set(6, 13, K[3]); }
-    else { pb.limb(11, 7, 4, 8, 1, K[2]); }
-    return selOut(pb).canvas();
-  };
-  const r = [0, 1, 2, 3].map(mkF), l = r.map(flipC);
-  for (const f of [...r, ...l]) { f.ax = 9; f.ay = 7; }
-  return { r, l };
-})();
+const CROW = SPR.CROW;
 // 만장굴의 박쥐 (동굴에서는 까마귀 대신): 막 날개를 펄럭이며 같은 방식으로 내리꽂음
-const BAT = (() => {
-  const K = ['#16121c', '#2a2232', '#3e3248', '#5a4a66'].map(c => mute(c)), eye = '#e8584a';
-  const mkF = (wing) => {
-    const pb = new PB(18, 14), cx = 9, cy = 7;
-    const span = [[-1, -5], [0, -2], [1, 3], [0, 1]][wing];   // 날개 끝 높이 (위 · 가운데 · 아래 · 접음)
-    if (wing < 3) for (const sd of [-1, 1]) {
-      const tipX = cx + sd * 8, tipY = cy + span[1];
-      for (let k = 0; k <= 8; k++) { const t = k / 8, x = cx + sd * k, yTop = Math.round(cy - 1 + (tipY - cy + 1) * t), yBot = Math.round(cy + 2 + (tipY - cy) * t * 0.6 + Math.sin(t * Math.PI * 3) * 1.2 * t); for (let y = Math.min(yTop, yBot); y <= Math.max(yTop, yBot); y++) pb.set(x, y, y === yTop ? K[3] : K[1]); }
-      pb.limb(cx + sd, cy - 1, tipX, tipY, 1, K[2]);   // 날개 뼈
-    } else { pb.rect(cx - 3, cy - 1, 7, 4, K[1]); }
-    pb.ellipse(cx + 0.5, cy + 1, 2.2, 2.6, (a, b) => b < -0.3 ? K[2] : K[1]);
-    pb.set(cx - 1, cy - 2, K[2]); pb.set(cx + 2, cy - 2, K[2]);   // 귀
-    pb.set(cx, cy, eye); pb.set(cx + 1, cy, eye);
-    return selOut(pb).canvas();
-  };
-  const r = [0, 1, 2, 3].map(mkF), l = r.map(flipC);
-  for (const f of [...r, ...l]) { f.ax = 9; f.ay = 7; }
-  return { r, l };
-})();
+const BAT = SPR.BAT;
 class Crow {
   constructor(x, delay) { this.px = x; this.py = -VOFF + 50 + rand(-6, 6); this.x = x + rand(-40, 40); this.sx = this.x; this.y = -VOFF - 16; this.t = 0; this.delay = delay; this.state = 'in'; this.dodged = false; this.anim = rand(0, 6); this.face = 1; this.bat = !!themeCfg().indoor; }
   update(dt) {
@@ -2220,14 +2042,7 @@ class PatDialect extends Pattern {
 function pxLine(x0, y0, x1, y1, w, col) { const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0))), o = (w - 1) >> 1; g.fillStyle = col; for (let i = 0; i <= n; i++) g.fillRect(Math.round(lerp(x0, x1, i / n)) - o, Math.round(lerp(y0, y1, i / n)) - o, w, w); }
 // 칼바람 초승달: 가운데는 하얗게 달아오르고 끝으로 갈수록 금빛 · 주황, 바깥 먹선 (왼쪽으로 날아가는 모양 기준)
 const SLASH_SPR = {};
-function slashSprite(hh) {
-  if (SLASH_SPR[hh]) return SLASH_SPR[hh];
-  const w = 12, h = hh * 2 + 3, pb = new PB(w, h);
-  for (let j = -hh; j <= hh; j++) { const t = j / hh, bow = 6 * (1 - t * t), th = Math.max(1, Math.round(3.2 * (1 - t * t))) + 1;
-    for (let k = 0; k < th; k++) { const x = Math.round(2 + (6 - bow) + k); pb.set(x, j + hh + 1, k === 0 ? '#fff4e0' : k === 1 ? C.yel[3] : k === 2 ? C.org[3] : C.org[2]); } }
-  const r = selOut(pb).canvas();
-  return (SLASH_SPR[hh] = { l: r, r: flipC(r) });
-}
+function slashSprite(hh) { return SLASH_SPR[hh] || (SLASH_SPR[hh] = WK.slash(hh)); }
 // 칼바람 베기: 지나갈 높이에 점선이 깔린 뒤 초승달 칼바람이 날아옴 (낮으면 뛰고, 높으면 구르기)
 class SlashWave {
   constructor(x, high, speed, warn, dir = -1) { this.dir = dir; this.x = x; this.high = high; this.y = high ? GROUND - 28 : GROUND - 8; this.speed = speed; this.warn = warn; this.t = 0; this.dodged = false; }
@@ -2250,13 +2065,7 @@ class SlashWave {
   }
 }
 // 난도질: 땅에 칼자국이 번쩍인 뒤 커다란 칼이 꽂힘
-const BIG_KNIFE = (() => {
-  const pb = new PB(10, 34), BL = ['#7e8284', '#b0b4b2', '#dcdcd4', '#f2f2ea'].map(c => mute(c));
-  for (let y = 0; y < 10; y++) for (let x = 3; x < 7; x++) pb.set(x, y, x === 3 ? C.wood[2] : C.wood[1]);
-  pb.rect(1, 10, 8, 2, BL[0]);
-  for (let y = 12; y < 34; y++) { const w = y > 29 ? 34 - y : 7; for (let x = 1; x < 1 + w; x++) pb.set(x, y, x === 1 ? BL[3] : x < 4 ? BL[2] : x < 7 ? BL[1] : BL[0]); }
-  return selOut(pb).canvas();
-})();
+const BIG_KNIFE = SPR.BIG_KNIFE;
 class KnifeDrop {   // 도마 난도질: 예고 → 하늘에서 칼날이 번뜩 → 확 빨라지며 내리꽂힘 → 콱! (멈칫 · 섬광 · 땅 갈라짐 · 흙먼지) → 꽂힌 칼이 부르르 떪
   constructor(x, delay) { this.x = Math.round(x); this.delay = delay; this.t = 0; this.y = -VOFF - 34; this.vy = 380; this.st = 'warn'; this.dodged = false; this.cracks = Array.from({ length: 6 }, (_, i) => { const s = i < 3 ? -1 : 1, pts = []; let cx = 0, cy = 0; for (let k = 0; k < 4 + (i % 3); k++) { cx += s * randi(1, 3); cy = clamp(cy + randi(-1, 1), 0, 3); pts.push([cx, cy]); } return pts; }); }
   update(dt) {
@@ -2307,20 +2116,12 @@ class KnifeDrop {   // 도마 난도질: 예고 → 하늘에서 칼날이 번�
     if (q < 0.06) { g.globalAlpha = 0.8; g.drawImage(silOf(BIG_KNIFE, '#fff4e0'), this.x - 5, Math.round(this.y - 8 + sink)); g.globalAlpha = 1; }   // 꽂히는 순간 칼이 하얗게 번쩍
   }
 }
-const SMALL_KNIFE = (() => { const pb = new PB(12, 5), BL = ['#9ea2a0', '#dcdcd4'].map(c => mute(c)); pb.rect(0, 1, 3, 2, C.wood[1]); for (let x = 3; x < 12; x++) { pb.set(x, 1, BL[1]); if (x < 11) pb.set(x, 2, BL[0]); } const c = selOut(pb).canvas(); c.flip = flipC(c); c.metal = true; return c; })();
+const SMALL_KNIFE = SPR.SMALL_KNIFE;   // 뒤집은 그림은 .flip
 
 // 폭포 내리기: 하늘에서 물방울이 떨어지며 자리를 알리고 → 물줄기가 쏟아져 → 양옆으로 낮은 물결이 퍼짐 (뛰어넘기)
 const WATER = ['#2e5a7a', '#4a86a8', '#7ab4cc', '#bfe0ea', '#f2fbff'].map(c => mute(c));
 // 폭포 물줄기 결: 세로로 흐르는 물살 무늬 (스크롤해서 흐르게) · 양 가장자리는 진한 물빛 테
-const FALL_TILE = (() => {
-  const w = 19, h = 48, pb = new PB(w, h);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const e = Math.abs(x - (w - 1) / 2) / ((w - 1) / 2), streak = vnoise(x * 0.9, y * 0.08, 91) + (hash2(x, y >> 2, 92) - 0.5) * 0.3;
-    const L = 0.75 - e * 0.55 + (streak - 0.5) * 0.7;
-    pb.set(x, y, e > 0.9 ? WATER[0] : L > 0.75 ? WATER[4] : L > 0.5 ? WATER[3] : L > 0.28 ? WATER[2] : WATER[1]);
-  }
-  return pb.canvas();
-})();
+const FALL_TILE = SPR.FALL_TILE;
 class WaterFall {
   constructor(x, delay) { this.x = Math.round(x); this.delay = delay; this.t = 0; this.dodged = false; this.dur = 0.32 * G.speed; }
   update(dt) {
@@ -2373,26 +2174,7 @@ class Ripple { // 땅을 타고 퍼지는 낮은 물결 (높이 10)
 }
 // 오름 스프라이트: 배경 오름과 같은 풀빛 팔레트 · 왼쪽 위 빛 · 비스듬한 풀 결 · 밑동 흙 · 큰 것은 꼭대기 분화구 (셀아웃 외곽선)
 const OREUM_SPR = {};
-function oreumSprite(H) {
-  if (OREUM_SPR[H]) return OREUM_SPR[H];
-  const hw = 13 + Math.round(H * 0.3), w = hw * 2 + 3, pb = new PB(w, H + 4), cx = hw + 1;
-  const GR = ['#284a3e', '#30584a', '#3a6852', '#4c7c5e', '#64946c'].map(c => mute(c)), SO = C.soil;
-  for (let i = -hw; i <= hw; i++) {
-    const t = i / hw, a = Math.abs(t);
-    let top = H - H * (1 - Math.pow(a, 1.7)); if (H > 26 && a < 0.18) top += (0.18 - a) / 0.18 * 2.4;
-    top = Math.round(top + (hash2(i, H, 61) - 0.5) * 1.2);
-    for (let y = Math.max(0, top); y < H + 4; y++) {
-      const d = y - top, ny = clamp((y / H) * 2 - 1, -1, 1);
-      let L = 0.62 - t * 0.42 + (d < 2 ? 0.18 : 0) - (y > H - 4 ? 0.2 : 0) + (vnoise((cx + i) * 0.3 + y * 0.25, y * 0.12, 62) - 0.5) * 0.25;
-      if ((y + Math.round(i * 0.6)) % 5 === 0 && d > 2) L -= 0.08;   // 비스듬한 풀 결
-      let col = band(GR, clamp(L, 0, 0.999), cx + i, y, 0.6);
-      if (y >= H) col = SO[y === H ? 3 : y === H + 1 ? 2 : 1];       // 뚫고 나온 흙
-      if (d === 0 && hash2(i, H, 63) < 0.25) col = GR[4];             // 풀잎 끝 반짝
-      pb.set(cx + i, y, col);
-    }
-  }
-  return (OREUM_SPR[H] = selOut(pb).canvas());
-}
+function oreumSprite(H) { return OREUM_SPR[H] || (OREUM_SPR[H] = WK.oreum(H)); }
 // 오름 솟기: 땅이 부풀고 갈라진 뒤 풀 덮인 오름이 불쑥 솟았다 가라앉음
 class OreumRise {
   constructor(x, delay, H) { this.x = Math.round(x); this.delay = delay; this.H = H; this.t = 0; this.h = 0; this.dodged = false; this.w = 14; }
@@ -2456,42 +2238,7 @@ const TIDE_FR = 6, TIDE_SPR = {};
 function tideSprite(hi, f, dir) {
   const key = (hi ? 'h' : 'l') + f + (dir < 0 ? 'L' : 'R'); if (TIDE_SPR[key]) return TIDE_SPR[key];
   if (dir < 0) { const r = tideSprite(hi, f, 1), l = flipC(r); l.ax = r.width - 1 - r.ax; l.geo = r.geo; return (TIDE_SPR[key] = l); }
-  const T = TIDE, H = hi ? 46 : 22, back = hi ? 32 : 22, uc = hi ? 12 : 7, gap = hi ? 16 : 0, br = Math.sin(f / TIDE_FR * 6.283);
-  const R0 = (hi ? 17 : 9) + br * 0.5, vc = H - R0, PH = hi ? 3.2 : 3.45, th0 = hi ? 7.5 : 4.6;
-  const rOut = q => R0 * (1 - 0.32 * q / PH), thick = q => th0 * Math.pow(Math.max(0, 1 - q / PH), 0.8) + 0.7;
-  const top = u => u < -back ? 0 : hi ? H * (1 - Math.pow((uc - Math.min(u, uc)) / (uc + back), 2.2)) : H * Math.pow(Math.sin(clamp((u + back) / (uc + back), 0, 1) * Math.PI / 2), 1.25);   // 뒤 비탈: 높은 파도는 두툼한 둥근 등, 낮은 파도는 완만하게 오르다 물마루에서 수평
-  const front = v => uc + Math.pow(Math.max(0, vc - v), 1.25) * (hi ? 0.28 : 0.32);   // 앞면: 아래로 갈수록 앞으로 퍼짐 (물마루 밑은 오목)
-  const tcx = uc + R0 * 0.2, tcy = vc - R0 * 0.14, trx = R0 * 0.5, tryy = R0 * 0.42;   // 관: 입술과 중심이 어긋난 타원 (앞 · 아래로 치우침)
-  const u0 = -back - 3, w = Math.ceil(uc + R0 + (hi ? 6 : 10) - u0), h = H + 4, ax = -u0, pb = new PB(w, h), fr = f * 3.1;
-  const foam = (x, y, s) => vnoise(x * 0.45 + fr, y * 0.45, s);
-  for (let py = 0; py < h; py++) for (let px = 0; px < w; px++) {
-    const u = px - ax, v = h - 1 - py, dx = u - uc, dy = v - vc, r = Math.hypot(dx, dy);
-    let q = Math.atan2(dx, dy); if (q < -Math.PI / 2) q += 2 * Math.PI;
-    const inCurl = q >= 0 && q <= PH, ro = inCurl ? rOut(q) : 0, ri = ro - (inCurl ? thick(q) : 0);
-    let c = null;
-    if (inCurl && r <= ro && r >= ri) {   // 입술
-      const out = ro - r, up = Math.cos(q);
-      if (out < (q < 1.1 ? 0.9 : 1.2 + (q - 1.1) * 0.9) + foam(u, v, 31) * 1.5 && q < PH - 0.35) c = foam(u, v, 32) < 0.62 ? T[6] : T[5];   // 바깥 테 거품: 꼭대기는 얇고, 앞으로 부서지는 쪽일수록 두꺼운 덩어리
-      else c = r - ri < 1.2 ? T[2] : up > 0.2 ? T[4] : T[3];   // 아랫면(관 쪽)은 짙게 · 위쪽은 빛이 비침
-    } else if (inCurl && r < ri && ((u - tcx) / trx) ** 2 + ((v - tcy) / tryy) ** 2 < 1) {   // 관 안
-      const e = Math.hypot((u - tcx) / trx, (v - tcy) / tryy);
-      c = e > 0.78 && (v > tcy || u < tcx) ? T[1] : T[0];
-    } else if ((u <= uc && v <= top(u)) || (u > uc && u <= front(v) && v < vc) || (inCurl && r < ri)) {   // 몸통 · 앞면
-      const dTop = u <= uc ? top(u) - v : vc + R0 - v, faceSide = u > uc - 2 && v < vc + R0 * 0.6;
-      if (u <= uc && dTop < 1.2 + foam(u, v, 33) * 2.2 * clamp((u + back * 0.7) / (uc + back * 0.7), 0, 1)) c = foam(u, v, 34) < 0.6 ? T[6] : T[5];   // 물마루 거품 (앞쪽일수록 두껍게)
-      else if (faceSide) c = v > vc + R0 * 0.25 ? T[4] : v > vc - R0 * 0.2 ? T[3] : T[2];   // 앞면: 입술 밑은 빛이 비쳐 밝고 아래는 짙게
-      else { c = dTop < 4 ? T[4] : dTop < 9 ? T[3] : dTop < 16 ? T[2] : T[1]; const sl = dTop - (vnoise(u * 0.12 + fr * 0.4, 1, 38) - 0.5) * 3; if (u < uc - 3 && dTop > 3 && (Math.abs(sl - 6.5) < 0.5 || Math.abs(sl - 12.5) < 0.5) && vnoise(u * 0.22 - fr * 0.5, Math.round(sl), 39) > 0.48) c = T[5]; }   // 수면 따라 층 · 수면과 나란히 흐르다 끊기는 거품 줄
-    }
-    if (!hi && !c && u > uc - 3 && u < front(0) + 6 && v < 3.5 + foam(u, 0, 36) * 4 * (1 - Math.abs(u - front(0) + 2) / 11)) c = foam(u, v, 37) < 0.55 ? T[6] : T[5];   // 낮은 파도 앞발치: 부서지는 흰 물
-    if (c && hi && v < gap + 2 && u > -14) { const archTop = u < 0 ? gap * Math.sqrt(Math.max(0, 1 - (u / 14) ** 2)) : gap; if (v < archTop) c = null; else if (v < archTop + 1.5 && foam(u, v, 40) < 0.5) c = T[5]; }   // 굴러서 지나갈 아치 (배 밑은 물보라 테)
-    if (c) pb.set(px, py, c);
-  }
-  // 입술 끝 갈퀴: 거품 손가락 세 갈래 (아래 · 뒤로 휨)
-  const tq = PH, tr = rOut(tq) - thick(tq) * 0.5, tu = uc + Math.sin(tq) * tr, tv = vc + Math.cos(tq) * tr;
-  for (let k = 0; k < 3; k++) { const ang = tq + (k - 1) * 0.5, len = 2 + ((k + f) % 3); for (let j = 0; j <= len; j++) { const uu = Math.round(tu + Math.sin(ang) * j * 0.8), vv = Math.round(tv + Math.cos(ang) * j * 0.8); if (!hi || vv >= gap) pb.set(uu + ax, h - 1 - vv, j === len ? T[5] : T[6]); } }
-  const c = selOut(pb, 0.62).canvas(); c.ax = ax;
-  c.geo = { H, back, uc, gap, tip: [Math.round(tu), Math.round(tv)] };
-  return (TIDE_SPR[key] = c);
+  return (TIDE_SPR[key] = WK.tide(hi, f));   // 오른쪽으로 가는 파도 (기준점 ax · 모양 geo가 붙어 옴)
 }
 const TIDE = ['#0e2e58', '#1a4e86', '#2a72aa', '#3e98c4', '#6cc4dc', '#c8eef4', '#ffffff'].map(c => mute(c, 0.85));
 
@@ -3741,17 +3488,7 @@ function bar(x, y, w, h, k, lag, col, hi, back = UI.lo) {
 
 // 특보 아이콘 10x10: 태풍 소용돌이 · 귤 · 참새 · 캐리어 · 유채꽃
 const WX_ICON = {};
-function wxIcon(id) {
-  if (WX_ICON[id]) return WX_ICON[id];
-  const pb = new PB(10, 10), Y = C.yel, O = C.org, S = C.stone, Wh = C.cloth;
-  const pat = (rows, m) => rows.forEach((r, y) => [...r].forEach((ch, x) => m[ch] && pb.set(x, y, m[ch])));
-  if (id === 'typhoon') pat(['..........', '....+++...', '.......+..', '....##.+..', '...#..#...', '...#..#...', '..+.##....', '..+.......', '...+++....', '..........'], { '#': Wh[3], '+': Wh[1] });
-  else if (id === 'harvest') { pb.ellipse(5, 6, 3.6, 3.2, (nx, ny) => O[sphereLight(nx, ny) < 0.5 ? 1 : sphereLight(nx, ny) < 0.8 ? 2 : 3]); pb.set(5, 2, C.leaf[2]); pb.set(6, 2, C.leaf[3]); }
-  else if (id === 'flight') { const K = ['#8a5a3a', '#5a3a28', '#8c4a2c', '#e6dac2', '#261d1c', '#f4efe4'].map(c => mute(c)); pb.ellipse(4.5, 6.2, 3.2, 2.3, (nx, ny) => ny > 0.2 ? K[3] : K[0]); pb.ellipse(7, 4.2, 1.9, 1.8, (nx, ny) => ny < -0.2 ? K[2] : K[5]); pb.set(7, 4, K[4]); pb.set(9, 4, K[4]); pb.set(7, 5, K[4]); pb.set(1, 6, K[1]); pb.set(0, 7, K[1]); pb.limb(4, 5, 2, 2, 1, K[1]); }   // 참새
-  else if (id === 'peak') { for (let y = 3; y < 9; y++) for (let x = 2; x < 8; x++) pb.set(x, y, x === 2 ? O[3] : x === 7 ? O[1] : O[2]); pb.set(4, 2, S[2]); pb.set(5, 2, S[2]); pb.set(3, 9, S[1]); pb.set(6, 9, S[1]); }
-  else { for (const [dx, dy] of [[0, -2], [2, 0], [0, 2], [-2, 0], [1, -1], [-1, 1], [1, 1], [-1, -1]]) pb.set(5 + dx, 4 + dy, Y[2]); pb.set(5, 4, O[2]); pb.set(5, 7, C.leaf[2]); pb.set(5, 8, C.leaf[1]); }
-  return (WX_ICON[id] = selOut(pb).canvas());
-}
+function wxIcon(id) { return WX_ICON[id] || (WX_ICON[id] = WK.wx(id)); }
 function drawHUD() {
   // 높이 뛴 숨비가 점수판 밑에 오면 점수판을 살짝 비침
   const hudFade = P && !P.dead && P.y + VOFF - 26 < 36 ? 0.45 : 1; g.save(); g.globalAlpha = hudFade;
@@ -4144,8 +3881,6 @@ function frame(now) {
   requestAnimationFrame(frame);
   const fonts = Promise.all(['12px Galmuri11', 'bold 12px Galmuri11', '10px Galmuri9'].map(f => document.fonts.load(f, '가A1')));
   await Promise.race([fonts.catch(() => {}), new Promise(r => setTimeout(r, 4000))]);
-  await WK_READY;   // 배경 · 물리 계산 (WASM 없이는 못 돎)
-  if (!WK) { wasmMissing(); return; }
   fonts.then(() => { textCache.clear(); glyphCache.clear(); logoCache.clear(); _strC.clear(); araeCache.clear(); wordCache.clear(); FIT_MEMO.clear(); for (const k in _uiSpr) delete _uiSpr[k]; for (const k in SUB_BTN) delete SUB_BTN[k]; }).catch(() => {});
   buildScenes();
   loadPortraits();
