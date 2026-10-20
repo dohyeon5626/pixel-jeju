@@ -109,7 +109,7 @@ cv.addEventListener('pointerdown', e => {
     if (G && G.go) return;
     const r = cv.getBoundingClientRect(), px = (e.clientX - r.left) / r.width * W, py = (e.clientY - r.top) / r.height * H;
     if (dexView) {   // 칸을 한 번 누르면 고르기, 고른 칸을 한 번 더 누르면 연습 · 맨 아래 줄을 누르면 닫기
-      const keys = Object.keys(PATTERNS), c = Math.floor((px - 13) / 80), rr = Math.floor((py - 26) / 36), i = rr * 5 + c, inTile = px - 13 - c * 80 < 77 && py - 26 - rr * 36 < 33;
+      const keys = Object.keys(PATTERNS), c = Math.floor((px - DEX_X) / 80), rr = Math.floor((py - 26) / 36), i = rr * 5 + c, inTile = px - DEX_X - c * 80 < 77 && py - 26 - rr * 36 < 33;
       if (py > H - 26) { dexView = false; Sound.sfx.select(); return; }
       if (inTile && c >= 0 && c < 5 && rr >= 0 && i < keys.length) { if (i === dexSel && SEEN[keys[i]]) tap('start'); else { dexSel = i; Sound.sfx.select(); } }
       return;
@@ -2587,14 +2587,15 @@ const DEX_NAME = { rise: '돌하르방', hop: '꼬마 하르방', suitcase: '캐
 // 도감 아래 설명 줄: 이름 — 피하는 법 (이벤트 · 퀴즈는 어떤 공격이 나오는지)
 const DEX_INFO = { quiz: '제주어 퀴즈 — 뜻이 맞는 쪽으로 걸어가면 정답', halmang: '사투리 할머니 — 솟는 글자 · 귤밭 폭격 · 태풍 마이삭', murang: '뭐랭하멘 — 조작 반전 · 구독 폭격 · 해석 레이저', seolmun: '설문대할망 — 폭포 · 오름 · 주상절리 · 치마폭 파도', knife: '칼 든 하르방 — 칼바람 · 난도질 · 칼 던지기' };
 const dexInfo = k => DEX_INFO[k] || `${PATTERNS[k].title} — ${PATTERNS[k].sub}`;
-// 용어 도감: 만난 밈은 이름, 맞지 않고 통과한 밈은 금테 + ★
+// 용어 도감: 만난 밈은 이름, 맞지 않고 통과한 밈은 금테 + ★ · 칸 묶음(폭 397)은 넓은 화면에서도 가운데
+const DEX_X = 13 + (W - 426) / 2;
 function drawDex() {
   g.fillStyle = 'rgba(23,17,15,0.75)'; g.fillRect(0, 0, W, H);
   const keys = Object.keys(PATTERNS), total = keys.length;
   uiBox(6, 6, W - 12, H - 12);
   uiText(`용어 도감  ${dexCount()}/${total}   ★ ${starCount()}/${total}`, W / 2, 12, { font: 'b', color: UI.gold, align: 'center' });
   keys.forEach((k, i) => {
-    const c = i % 5, r = Math.floor(i / 5), x = 13 + c * 80, y = 26 + r * 36, seen = SEEN[k], star = SEEN[k] === 2;
+    const c = i % 5, r = Math.floor(i / 5), x = DEX_X + c * 80, y = 26 + r * 36, seen = SEEN[k], star = SEEN[k] === 2;
     uiBox(x, y, 77, 33, i === dexSel ? UI.gold : star ? UI.gold : seen ? UI.hi : null);
     if (i === dexSel) { g.fillStyle = Math.floor(titleT * 4) % 2 ? UI.gold : UI.warnHi; g.fillRect(x - 1, y - 1, 79, 1); g.fillRect(x - 1, y + 33, 79, 1); g.fillRect(x - 1, y, 1, 33); g.fillRect(x + 77, y, 1, 33); }   // 고른 칸: 금테
     const def = PATTERNS[k], name = seen ? (DEX_NAME[k] || (def.title || '').replace(/[!~]/g, '')) : '???';
