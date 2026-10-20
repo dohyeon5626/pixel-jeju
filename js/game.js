@@ -4203,6 +4203,7 @@ function frame(now) {
   requestAnimationFrame(frame);
   const fonts = Promise.all(['12px Galmuri11', 'bold 12px Galmuri11', '10px Galmuri9'].map(f => document.fonts.load(f, '가A1')));
   await Promise.race([fonts.catch(() => {}), new Promise(r => setTimeout(r, 4000))]);
+  await Promise.race([WK_READY, new Promise(r => setTimeout(r, 3000))]);   // 배경 굽는 WASM 커널 (늦으면 JS로)
   fonts.then(() => { textCache.clear(); glyphCache.clear(); logoCache.clear(); _strC.clear(); araeCache.clear(); wordCache.clear(); FIT_MEMO.clear(); for (const k in _uiSpr) delete _uiSpr[k]; for (const k in SUB_BTN) delete SUB_BTN[k]; }).catch(() => {});
   buildScenes();
   loadPortraits();
