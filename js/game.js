@@ -2865,8 +2865,8 @@ function updatePlayer(dt) {
     const ac = P.onGround ? ACCEL : AIR_ACCEL, fr = P.onGround ? FRICTION : AIR_FRICTION;
     if (dir) {
       if (P.onGround && Math.sign(P.vx) === -dir && Math.abs(P.vx) > 50) { P.skidT = 0.12; if (Math.random() < 0.5) dust(P.x + dir * 4, GROUND, 1, dir); }
-      P.vx = approach(P.vx, dir * SPEED * (1 + 0.08 * (G.up.speed || 0)), ac * dt); P.face = dir;
-    } else P.vx = approach(P.vx, 0, fr * dt);
+      P.vx = WK ? WK.walk(P.vx, dir, P.onGround, G.up.speed || 0, dt) : approach(P.vx, dir * SPEED * (1 + 0.08 * (G.up.speed || 0)), ac * dt); P.face = dir;   // WASM: wasm/src/player.rs
+    } else P.vx = WK ? WK.walk(P.vx, 0, P.onGround, 0, dt) : approach(P.vx, 0, fr * dt);
   }
 
   if (P.poundBuf > 0 && P.hurtT <= 0 && !P.pound && !P.onGround) {
@@ -2925,15 +2925,7 @@ function updatePlayer(dt) {
     if (P.poundT > 0) P.vy = 0; else P.vy = 620;
     P.ghostT2 = (P.ghostT2 || 0) - dt; if (P.ghostT2 <= 0 && P.poundT <= 0) { P.ghostT2 = 0.03; G.ghosts.push({ img: curFrame(), x: P.x, y: P.y, life: 0.16, col: C.yel[3] }); }
   }
-  let gmul = 1;
-  if (Math.abs(P.vy) < 50 && held.jump && !P.onGround) gmul = 0.55;
-  else if (P.vy > 0) gmul = 1.25;
-  P.vy = P.pound ? P.vy : Math.min(P.vy + GRAV * gmul * dt, MAX_FALL);
-  P.x += (P.vx + G.wind * (P.rollT > 0 ? 0.4 : 1)) * dt;
-  P.y += P.vy * dt;
-  P.x = clamp(P.x, G.arenaL || 8 + EDGE, G.arenaR);
-  // 부드러운 천장: 점수판 아래에서 멈춤
-  if (P.y < -VOFF + 40) { P.y = -VOFF + 40; if (P.vy < 0) P.vy *= 0.3; }
+  if (!(WK && WK.fall(P, dt, G.wind, G.arenaL || 8 + EDGE, G.arenaR, held.jump))) playerFall(dt);   // WASM: wasm/src/player.rs
   if (!P.onGround) P.peakY = Math.min(P.peakY ?? P.y, P.y);
 
   if (P.y >= GROUND) {
@@ -2959,6 +2951,17 @@ function updatePlayer(dt) {
   updateScarf();
 }
 
+// 중력 · 바람 · 양옆 벽 · 부드러운 천장(점수판 아래에서 멈춤)
+function playerFall(dt) {
+  let gmul = 1;
+  if (Math.abs(P.vy) < 50 && held.jump && !P.onGround) gmul = 0.55;
+  else if (P.vy > 0) gmul = 1.25;
+  P.vy = P.pound ? P.vy : Math.min(P.vy + GRAV * gmul * dt, MAX_FALL);
+  P.x += (P.vx + G.wind * (P.rollT > 0 ? 0.4 : 1)) * dt;
+  P.y += P.vy * dt;
+  P.x = clamp(P.x, G.arenaL || 8 + EDGE, G.arenaR);
+  if (P.y < -VOFF + 40) { P.y = -VOFF + 40; if (P.vy < 0) P.vy *= 0.3; }
+}
 function clearInputs() {
   for (const k of GAME_KEYS) pressed[k] = false;
   pressed.left = pressed.right = pressed.start = false;
