@@ -3210,14 +3210,16 @@ function updateVolcano(dt) {
   for (const p of G.bgfx) { p.life -= dt; p.vy += (p.grav || 0) * dt; p.x += p.vx * dt; p.y += p.vy * dt; if (p.kind === 'smoke') p.r += p.gr * dt; }
   G.bgfx = G.bgfx.filter(p => p.life > 0);
 }
+// 땅에 닿은 빗방울이 톡
+function rainSplash(p) { if (p.near && Math.random() < 0.5) for (const sd of [-1, 1]) fx({ x: p.x, y: GROUND - 2, vx: sd * rand(15, 35) + p.vx * 0.1, vy: -rand(30, 60), grav: 320, life: 0.18, kind: 'px', col: 'rgba(215,228,250,0.85)' }); }
 function updateFxList(dt) {
-  for (const p of G.fx) {
+  if (!(WK && WK.fxStep(G.fx, dt, amb.t))) for (const p of G.fx) {   // WASM: wasm/src/fx.rs (모두 한 번에)
     p.life -= dt; p.vy += p.grav * dt;
     if (p.drag) { p.vx *= 1 - p.drag * dt; p.vy *= 1 - p.drag * dt; }
     if (p.kind === 'petal') p.vy += Math.sin(amb.t * 6 + p.x) * 60 * dt;
     p.x += p.vx * dt; p.y += p.vy * dt;
     if ((p.kind === 'px' || p.kind === 'chunk') && p.grav && p.y > GROUND + 1) { p.y = GROUND + 1; p.vy *= -0.35; p.vx *= 0.6; }
-    if (p.kind === 'rain' && p.y >= GROUND - 1) { p.life = 0; if (p.near && Math.random() < 0.5) for (const sd of [-1, 1]) fx({ x: p.x, y: GROUND - 2, vx: sd * rand(15, 35) + p.vx * 0.1, vy: -rand(30, 60), grav: 320, life: 0.18, kind: 'px', col: 'rgba(215,228,250,0.85)' }); }   // 땅에 닿은 빗방울이 톡
+    if (p.kind === 'rain' && p.y >= GROUND - 1) { p.life = 0; rainSplash(p); }
   }
   G.fx = G.fx.filter(p => p.life > 0);
   if (G.fx.length > 600) G.fx.splice(0, G.fx.length - 600);
