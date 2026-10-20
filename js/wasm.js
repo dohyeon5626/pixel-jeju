@@ -10,11 +10,11 @@
 let WK = null;
 const GAME_SCRIPTS = ['chars', 'portraits', 'boss', 'scenery', 'audio', 'game'];
 (async () => {
-  const url = 'wasm/jeju.wasm?v=285', imports = { m: { jsin: Math.sin, jcos: Math.cos, jasin: Math.asin, jexp: Math.exp, jpow: Math.pow, jatan2: Math.atan2, jhypot2: Math.hypot, jhypot3: Math.hypot }, g: gameImports() };
+  const url = 'wasm/jeju.wasm?v=286', imports = { m: { jsin: Math.sin, jcos: Math.cos, jasin: Math.asin, jexp: Math.exp, jpow: Math.pow, jatan2: Math.atan2, jhypot2: Math.hypot, jhypot3: Math.hypot }, g: gameImports() };
   try {
     let inst;
     if (location.protocol === 'file:') {   // file://에선 fetch가 막혀서 base64 사본(wasm/jeju-wasm.js)을 스크립트로 읽음
-      await new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'wasm/jeju-wasm.js?v=285'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+      await new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'wasm/jeju-wasm.js?v=286'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
       inst = (await WebAssembly.instantiate(Uint8Array.from(atob(window.JEJU_WASM), c => c.charCodeAt(0)), imports)).instance;
     } else {
       try { inst = (await WebAssembly.instantiateStreaming(fetch(url), imports)).instance; }
@@ -22,7 +22,7 @@ const GAME_SCRIPTS = ['chars', 'portraits', 'boss', 'scenery', 'audio', 'game'];
     }
     WK = wkApi(inst.exports);
   } catch (e) { console.error('WASM을 불러오지 못함', e); wasmMissing(); return; }
-  for (const n of GAME_SCRIPTS) { const s = document.createElement('script'); s.src = `js/${n}.js?v=285`; s.async = false; document.body.appendChild(s); }   // async = false: 붙인 순서대로 실행
+  for (const n of GAME_SCRIPTS) { const s = document.createElement('script'); s.src = `js/${n}.js?v=286`; s.async = false; document.body.appendChild(s); }   // async = false: 붙인 순서대로 실행
 })();
 // WASM 없이는 배경 · 물리가 없어 시작할 수 없음 (아주 오래된 브라우저 등)
 function wasmMissing() {
@@ -53,6 +53,9 @@ function gameImports() {
     jreward: (k, x, y) => reward(HZ.rewards[k], x, y),
     jdecal: (x, life) => G.decals.push({ x, t: 0, life }),
     jhook: (id, a, b, c, d) => HZ.hook(id, a, b, c, d),
+    // 효과음 (wasm/src/sfx.rs가 소리마다 부름 · 파형 · 필터는 번호)
+    jtone: (f, f2, d, w, v, at, vib, exact) => Sound.toneN(f, f2, d, w, v, at, vib, exact),
+    jnoise: (d, v, ft, f, f2, q, at) => Sound.noiseN(d, v, ft, f, f2, q, at),
   };
 }
 
@@ -135,6 +138,9 @@ function wkApi(ex) {
     tide(hi, f) { palInit(); return sprite(ex.spr_tide(hi ? 1 : 0, f)); },
     wx(id) { palInit(); return sprite(ex.spr_wx(['typhoon', 'harvest', 'flight', 'peak'].indexOf(id))); },
     // 배경음악: 곡 바꾸기 · 8분음표 한 칸의 음표들을 play(종류, f, f2, 길이, 파형/필터, 세기, 시작, 버스, det/q)로
+    // 효과음: 이름 목록 · i번째 효과음 내기 (너무 잦으면 건너뛰도록 지금 시각을 같이 넘김)
+    sfxNames() { return JSON.parse(new TextDecoder().decode(u8(ex.sfx_names(), ex.sfx_names_len()))); },
+    sfx(i, a, b) { ex.sfx_play(i, a, b, performance.now()); },
     musicSong(i) { ex.music_song(i); },
     musicStep(s, tempo, calm, hip, key, varied, accent, hipVar, play) {
       const n = ex.music_step(s, tempo, calm ? 1 : 0, hip ? 1 : 0, key, varied ? 1 : 0, accent ? 1 : 0, hipVar), b = new Float64Array(ex.memory.buffer, ex.music_buf(), n * 9);

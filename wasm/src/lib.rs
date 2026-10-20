@@ -25,6 +25,7 @@ mod scene;
 mod scn_cave;
 mod scn_place;
 mod scn_theme;
+mod sfx;
 mod spr;
 mod text;
 mod tree;
@@ -243,6 +244,26 @@ pub extern "C" fn music_step(s: f64, tempo: f64, calm: i32, hip: i32, key: f64, 
 #[no_mangle]
 pub extern "C" fn music_buf() -> *const f64 {
     music::events().as_ptr()
+}
+
+// ── 효과음 (sfx) ──────────────────────────────────────────────
+static mut SFX_NAMES: String = String::new();
+// 효과음 이름 목록 (JSON) 위치 · 길이
+#[no_mangle]
+pub extern "C" fn sfx_names() -> *const u8 {
+    unsafe {
+        SFX_NAMES = sfx::names_json();
+        (*std::ptr::addr_of!(SFX_NAMES)).as_ptr()
+    }
+}
+#[no_mangle]
+pub extern "C" fn sfx_names_len() -> usize {
+    unsafe { (*std::ptr::addr_of!(SFX_NAMES)).len() }
+}
+// 효과음 하나 내기 (a · b: 효과음마다 다른 인자, now: performance.now() — 너무 잦으면 건너뜀)
+#[no_mangle]
+pub extern "C" fn sfx_play(id: usize, a: f64, b: f64, now: f64) {
+    sfx::play(id, a, b, now)
 }
 
 // ── 게임 규칙: 장애물 (game · hz · hz_*) ──────────────────────
