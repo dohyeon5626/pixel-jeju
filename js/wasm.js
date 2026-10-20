@@ -2,27 +2,29 @@
 //  WASM 엔진 (Rust 소스: wasm/src · 빌드: wasm/build.sh)
 //  배경 장면 · 캐릭터와 소품 스프라이트 · 회오리 깔때기 · 파티클 · 숨비 이동 물리 · 글자를 맡김
 //  나머지 스크립트는 WASM이 준비된 뒤에 차례로 붙임 (스크립트를 읽는 순간 스프라이트를 굽기 때문)
-//  JS 쪽은 브라우저 일(캔버스 · 입력 · 소리 · 화면)과 게임 규칙만 — 여기서는 둘 사이에 값을 주고받음
+//  장애물 · 패턴 규칙과 그리기 명령, 효과음 · 배경음악 작곡도 Rust — JS 쪽은 브라우저 일(캔버스 · 입력 · 소리 · 화면)과 나머지 진행, 여기서는 둘 사이에 값을 주고받음
 //  sin · exp 같은 함수는 브라우저 Math를 빌려 써서 원래 JS와 같은 값이 나옴
 // ─────────────────────────────────────────────────────────────
 'use strict';
 
-let WK = null;
+let WK = null, WASM_MEM = null;
 const GAME_SCRIPTS = ['chars', 'portraits', 'boss', 'scenery', 'audio', 'game'];
 (async () => {
-  const url = 'wasm/jeju.wasm?v=287', imports = { m: { jsin: Math.sin, jcos: Math.cos, jasin: Math.asin, jexp: Math.exp, jpow: Math.pow, jatan2: Math.atan2, jhypot2: Math.hypot, jhypot3: Math.hypot }, g: gameImports() };
+  const url = 'wasm/jeju.wasm?v=290', imports = { m: { jsin: Math.sin, jcos: Math.cos, jasin: Math.asin, jexp: Math.exp, jpow: Math.pow, jatan2: Math.atan2, jhypot2: Math.hypot, jhypot3: Math.hypot }, g: gameImports() };
+  imports.g.jpanic = (p, n) => console.error('Rust 패닉: ' + new TextDecoder().decode(new Uint8Array(WASM_MEM.buffer, p, n)));
   try {
     let inst;
     if (location.protocol === 'file:') {   // file://에선 fetch가 막혀서 base64 사본(wasm/jeju-wasm.js)을 스크립트로 읽음
-      await new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'wasm/jeju-wasm.js?v=287'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+      await new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'wasm/jeju-wasm.js?v=290'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
       inst = (await WebAssembly.instantiate(Uint8Array.from(atob(window.JEJU_WASM), c => c.charCodeAt(0)), imports)).instance;
     } else {
       try { inst = (await WebAssembly.instantiateStreaming(fetch(url), imports)).instance; }
       catch (e) { inst = (await WebAssembly.instantiate(await (await fetch(url)).arrayBuffer(), imports)).instance; }   // wasm MIME을 안 주는 서버
     }
+    WASM_MEM = inst.exports.memory; inst.exports.start();
     WK = wkApi(inst.exports);
   } catch (e) { console.error('WASM을 불러오지 못함', e); wasmMissing(); return; }
-  for (const n of GAME_SCRIPTS) { const s = document.createElement('script'); s.src = `js/${n}.js?v=287`; s.async = false; document.body.appendChild(s); }   // async = false: 붙인 순서대로 실행
+  for (const n of GAME_SCRIPTS) { const s = document.createElement('script'); s.src = `js/${n}.js?v=290`; s.async = false; document.body.appendChild(s); }   // async = false: 붙인 순서대로 실행
 })();
 // WASM 없이는 배경 · 물리가 없어 시작할 수 없음 (아주 오래된 브라우저 등)
 function wasmMissing() {
@@ -41,7 +43,7 @@ const hzCol = c => c >= 0x2000000 ? mute(hex6(c), 0.85) : c >= 0x1000000 ? mute(
 function gameImports() {
   return {
     jrand: () => Math.random(),
-    jfx: (k, x, y, vx, vy, grav, drag, life, size, col, big, len) => { const o = { x, y, vx, vy, grav, drag, life, size, col: hzCol(col), kind: HZ.fx[k] }; if (big) o.big = true; if (len) o.len = len; fx(o); },
+    jfx: (k, x, y, vx, vy, grav, drag, life, size, col, big, len, near) => { const o = { x, y, vx, vy, grav, drag, life, size, col: hzCol(col), kind: HZ.fx[k] }; if (big) o.big = true; if (len) o.len = len; if (near) o.near = true; fx(o); },
     jburst: (x, y, n, spd, life, grav, k, nc, c0, c1, c2, c3) => burst(x, y, n, [c0, c1, c2, c3].slice(0, nc).map(hzCol), spd, life, grav, HZ.fx[k]),
     jdust: (x, y, n, dir, big) => dust(x, y, n, dir, big),
     jlight: (x, y, r, col, a) => light(x, y, r, hzCol(col), a),
@@ -51,11 +53,18 @@ function gameImports() {
     jimpact: (x, y, col, power, quiet) => impact(x, y, hzCol(col), power, !!quiet),
     jhitstop: (t, cd) => hitstop(t, cd),
     jreward: (k, x, y) => reward(HZ.rewards[k], x, y),
-    jdecal: (x, life) => G.decals.push({ x, t: 0, life }),
+    jdecal: (x, life, mark) => G.decals.push(mark ? { x, t: 0, life, mark: true } : { x, t: 0, life }),
     jhook: (id, a, b, c, d) => HZ.hook(id, a, b, c, d),
     // 그리기 (wasm/src/draw.rs): 이미지 크기 · 기준점 묻기 · 잔상 남기기
     jimg: (src, id, a, b, c, p) => HZ.imgProp(src, id, a, b, c, p),
     jghost: (src, id, a, b, c, x, y, life, col) => G.ghosts.push({ img: HZ.img(src, id, a, b, c), x, y, life, col: hzCol(col) }),
+    // 패턴 (wasm/src/pat.rs): 장애물 만들기 · 필드 읽고 쓰기 · 판에 내기 · 화면 끝 경고 · 판 물어보기
+    jnew: (k, a, b, c, d, e) => HZ.jnew(k, a, b, c, d, e),
+    jget: (h, f) => HZ.jget(h, f),
+    jset: (h, f, v) => HZ.jset(h, f, v),
+    jspawn: h => HZ.jspawn(h),
+    jwarn: (side, k, dur, ph, act, a, b, c, d) => HZ.jwarn(side, k, dur, ph, act, a, b, c, d),
+    jquery: (q, a) => HZ.jquery(q, a),
     // 효과음 (wasm/src/sfx.rs가 소리마다 부름 · 파형 · 필터는 번호)
     jtone: (f, f2, d, w, v, at, vib, exact) => Sound.toneN(f, f2, d, w, v, at, vib, exact),
     jnoise: (d, v, ft, f, f2, q, at) => Sound.noiseN(d, v, ft, f, f2, q, at),
@@ -114,7 +123,11 @@ function wkApi(ex) {
     for (const [name, t] of K) { if (t === 'l') { i += 2; continue; } const v = f[i++]; if (t === 'n') { if (!Number.isNaN(v)) h[name] = v; } else h[name] = t === 'b' ? v !== 0 : t[v]; }
   };
   // 지금 판의 값 (game.rs Ctx 순서)
-  const setCtx = () => { const c = new Float64Array(ex.memory.buffer, ex.hz_ctx(), 13); c[0] = W; c[1] = P.x; c[2] = P.y; c[3] = P.dead ? 1 : 0; c[4] = G.arenaL; c[5] = G.arenaR; c[6] = G.speed; c[7] = G.magnetT || 0; c[8] = Sound.tempo || 0; c[9] = G.tier; c[10] = G.storm || 0; c[11] = G.lightning || 0; c[12] = amb.t; };
+  const setCtx = () => {
+    const c = new Float64Array(ex.memory.buffer, ex.hz_ctx(), 17);
+    c[0] = W; c[1] = P.x; c[2] = P.y; c[3] = P.dead ? 1 : 0; c[4] = G.arenaL; c[5] = G.arenaR; c[6] = G.speed; c[7] = G.magnetT || 0; c[8] = Sound.tempo || 0;
+    c[9] = G.tier; c[10] = G.storm || 0; c[11] = G.lightning || 0; c[12] = amb.t; c[13] = G.diff; c[14] = G.patterns.length; c[15] = themeCfg().indoor ? 1 : 0; c[16] = G.dark || 0;
+  };
   // Rust가 부르는 JS 일 (game.rs HOOKS): 부르기 전에 지금 객체를 최신 값으로 맞춰 둠
   let cur = null;
   const HOOK = {
@@ -132,10 +145,51 @@ function wkApi(ex) {
     bolt: () => cur.h.makeBolt(),
     ripple: (x, d) => { const r = new Ripple(x, d, (105 + G.tier * 5) * evK()); r.pat = cur.h.pat; spawnHz(r); },
     gset: (k, v) => { G[HZ.gfields[k]] = v; },
+    beatLead: d => beatLead(d),
   };
   const hooks = HZ.hooks.map(n => HOOK[n]);
-  HZ.hook = (id, a, b, c, d) => { unpack(cur.h, cur.K); hooks[id](a, b, c, d); };
+  HZ.hook = (id, a, b, c, d) => { if (cur.h) unpack(cur.h, cur.K); return hooks[id](a, b, c, d); };
   const call = (h, kind, fn) => { const K = HZ.kinds[kind], n = pack(h, K); setCtx(); cur = { h, K }; const r = fn(kindIdx[kind], n); cur = null; unpack(h, K); return r !== 0; };
+  // 패턴 (wasm/src/pat.rs): 상태는 패턴 객체에 · Rust가 만든 장애물은 fresh[번호]로 가리킴
+  const PT = JSON.parse(new TextDecoder().decode(u8(ex.pat_tables(), ex.pat_tables_len())));
+  const patIdx = Object.fromEntries(Object.keys(PT.kinds).map((k, i) => [k, i]));
+  const opt = v => Number.isNaN(v) ? undefined : v;   // 빈 인자는 생성자 기본값으로
+  const NEW = {
+    Rise: (x, warn, hold, chain, idx) => new Rise(x, warn, hold, !!chain, idx),
+    Hopper: (dir, x) => new Hopper(dir, opt(x)),
+    Meteor: (tx, fall) => new Meteor(tx, fall),
+    Pony: (dir, off) => new Pony(dir, off),
+    Pebble: dir => new Pebble(dir),
+    Tewak: dir => new Tewak(dir),
+    Suitcase: (dir, off) => new Suitcase(dir, off),
+    Pig: (dir, off) => new Pig(dir, off),
+    RentCar: (dir, off) => new RentCar(dir, off),
+    Bee: (dir, i, sp, ph) => new Bee(dir, i, sp, ph),
+    Gull: () => new Gull(),
+    Plane: (dir, low, sp) => new Plane(dir, !!low, sp),
+    Parcel: (x, delay) => new Parcel(x, delay),
+    Glider: (dir, high, sp) => new Glider(dir, !!high, sp),
+    Dolphin: (x0, x1, peak, T, warn) => new Dolphin(x0, x1, peak, T, warn),
+    Crow: (x, delay) => new Crow(x, delay),
+    DialectWord: (i, x, land) => new DialectWord(DIALECT[i][0], DIALECT[i][1], x, land),
+    Rotten: (x, y, vx, vy) => new Rotten(x, y, vx, vy),
+  };
+  let fresh = [];
+  HZ.jnew = (k, a, b, c, d, e) => fresh.push(NEW[PT.new[k]](a, b, c, d, e)) - 1;
+  HZ.jget = (h, f) => { const [name, t] = PT.fields[f], v = fresh[h][name]; return t === 'b' ? (v ? 1 : 0) : (v ?? NaN); };
+  HZ.jset = (h, f, v) => { const [name, t] = PT.fields[f]; fresh[h][name] = name === 'pat' ? null : t === 'b' ? v !== 0 : v; };
+  HZ.jspawn = h => spawnHz(fresh[h]);
+  HZ.jwarn = (side, k, dur, ph, act, a, b, c, d) => {
+    const w = { side }, kind = cur.kind; if (!Number.isNaN(k)) w.kind = PT.warn[k]; if (!Number.isNaN(ph)) w.ph = ph;
+    w.t = 0; w.dur = dur; w.spawn = () => WK.patAction(kind, act, a, b, c, d); G.warnings.push(w);
+  };
+  HZ.jquery = (q, a) => {
+    switch (PT.queries[q]) {
+      case 'meteorLive': return G.hz.some(h => h instanceof Meteor && h.phase !== 'boom' && (h.phase === 'fall' || h.phase === 'lava')) ? 1 : 0;
+      case 'parcelNear': return G.hz.some(h => h instanceof Parcel && Math.abs(h.x - a) < 14) ? 1 : 0;
+      case 'dialectCount': return DIALECT.length;
+    }
+  };
   // 그리기 이미지: 0 이 장애물의 spr · 1 이름 있는 스프라이트 · 2 크기별로 굽는 것 — 경로 한 단계는 배열 칸 · 좌우(0 r · 1 l) · -2 flip (-1 없음)
   const geval = eval, namedV = [];
   const named = i => namedV[i] ?? (namedV[i] = geval(HZ.named[i]));
@@ -212,6 +266,9 @@ function wkApi(ex) {
       return out;
     },
     hzOn(h, kind, ev, sx = 0, sy = 0) { return call(h, kind, (k, n) => ex.hz_on(k, hzBuf, n, HZ.events.indexOf(ev), sx, sy)); },
+    // 패턴 한 스텝 · 경고가 끝났을 때 남겨 둔 동작
+    patUpdate(h, kind, dt) { const K = PT.kinds[kind], n = pack(h, K); setCtx(); const prev = cur; cur = { h, K, kind }; fresh = []; ex.pat_update(patIdx[kind], hzBuf, n, dt); cur = prev; unpack(h, K); },
+    patAction(kind, act, a, b, c, d) { setCtx(); const prev = cur; cur = { h: null, K: null, kind }; fresh = []; ex.pat_action(patIdx[kind], act, a, b, c, d); cur = prev; },
     // 그리기 (which 0: 그림 · 1: 땅에 먼저 깔리는 예고) — Rust가 명령을 쌓으면 여기서 캔버스에 찍음
     hzDraw(h, kind, which) {
       const K = HZ.dkinds[kind], n = pack(h, K); setCtx(); cur = { h, K };

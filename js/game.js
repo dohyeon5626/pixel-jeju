@@ -695,86 +695,23 @@ class Zap {
 class Pattern { constructor(dur) { this.t = 0; this.dur = dur; } get done() { return this.t >= this.dur; } end() {} }
 class PatRise extends Pattern {
   constructor() { super(7.5); this.next = 0.3; }
-  update(dt) {
-    this.t += dt; this.next -= dt;
-    if (this.next > 0 || this.t > this.dur - 1.2) return;
-    const D = G.diff, warn = Math.max(0.6, 0.95 - D * 0.06) * G.speed;
-    if (Math.random() < (D >= 0.5 ? 0.5 : 0.3) && !this.justWaved && !this.paired && G.patterns.length <= 1) {
-      // 돌하르방 행렬: 땅이 갈라지며 하르방이 16분음표 박자로 쭈루루룩 차례로 솟음
-      const mode = pick(D >= 1 ? ['sweep', 'converge', 'pingpong', 'gap'] : ['sweep', 'sweep', 'gap']), step16 = 60 / (Sound.tempo || 138) / 4 * G.speed;
-      const lead = beatLead(warn), hold = 0.14 * G.speed, n = Math.ceil((W - 32) / 26) + 1, xs = Array.from({ length: n }, (_, i) => 16 + i * (W - 32) / (n - 1)), dir = pick([-1, 1]);
-      const at = (i) => dir > 0 ? i : n - 1 - i;
-      if (mode === 'sweep' || mode === 'gap') { const gap = mode === 'gap' ? randi(3, n - 5) : -9; xs.forEach((x, i) => { const j = at(i); if (Math.abs(j - gap) <= 1) return; spawnHz(new Rise(x, lead + j * step16, hold, true, j)); }); this.next = 2.4 + n * step16; }
-      else if (mode === 'converge') { xs.forEach((x, i) => { if (i === n >> 1) return; spawnHz(new Rise(x, lead + Math.min(i, n - 1 - i) * step16 * 1.3, hold, true, i)); }); this.next = 2.6 + n * step16 * 0.7; }   // 만나는 가운데 한 칸은 비움
-      else { xs.forEach((x, i) => { const j = at(i); spawnHz(new Rise(x, lead + j * step16, hold, true, j)); if (j < n - 3) spawnHz(new Rise(x, lead + (2 * n - 1 - j) * step16 + 2 * 60 / (Sound.tempo || 138) * G.speed, hold, true, j)); }); this.next = 3 + n * step16 * 2; }   // 되돌아올 땐 끝 세 칸은 비워 둠 (돌아서는 자리 = 안전지대)
-      this.justWaved = true; Sound.sfx.alarm();
-    } else {
-      this.justWaved = false;
-      const n = 1 + (Math.random() < 0.25 + D * 0.12 ? 1 : 0) + (D >= 3 && Math.random() < 0.35 ? 1 : 0);
-      const xs = [clamp(P.x + rand(-10, 10), 16, W - 16)];
-      for (let k = 0; xs.length < n && k < 40; k++) { const x = rand(16, W - 16); if (xs.every(o => Math.abs(o - x) > 40)) xs.push(x); }
-      xs.forEach(x => spawnHz(new Rise(x, warn, 0.8)));
-      this.next = Math.max(0.65, 1.4 - D * 0.12);
-    }
-  }
+  update(dt) { WK.patUpdate(this, 'rise', dt); }   // 언제 · 어디에 낼지는 wasm/src/pat_basic.rs
 }
 class PatHop extends Pattern {
   constructor() { super(7); this.next = 0.2; }
-  update(dt) {
-    this.t += dt; this.next -= dt;
-    if (this.next > 0 || this.t > this.dur - 1) return;
-    const dir = pick([-1, 1]); spawnHz(new Hopper(dir));
-    if (G.diff >= 2 && Math.random() < 0.3) spawnHz(new Hopper(-dir));
-    this.next = Math.max(0.5, 1.2 - G.diff * 0.1) * rand(0.8, 1.2);
-  }
+  update(dt) { WK.patUpdate(this, 'hop', dt); }   // 언제 · 어디에 낼지는 wasm/src/pat_basic.rs
 }
 class PatMeteor extends Pattern {
   constructor() { super(8.5); this.next = 1.4; const cf = themeCfg(); if (cf.indoor) { Sound.sfx.rumble(); shake(0.5); } else { if (cf.volcano) G.volcano.erupt = this.dur; Sound.sfx.erupt(); shake(0.6); flashFx(0.07, '#ff9a3a'); } }   // 동굴에선 천장이 우르르 (화산 분화 효과 없음)
-  update(dt) {
-    this.t += dt; this.next -= dt;
-    if (this.next > 0 || this.t > this.dur - 1.4) return;
-    const D = G.diff, fall = Math.max(0.85, 1.2 - D * 0.05) * G.speed;
-    if (D >= 1 && !this.barraged && !G.hz.some(h => h instanceof Meteor && h.phase !== 'boom' && (h.phase === 'fall' || h.phase === 'lava')) && Math.random() < 0.35) {
-      // 화산탄 줄폭격: 화산 쪽에서부터 8분음표마다 한 발씩 줄지어 떨어짐 · 숨비 근처에 두 칸짜리 빈자리
-      this.barraged = true; const step8 = 60 / (Sound.tempo || 138) / 2 * G.speed, xs = []; for (let x = 18; x < G.arenaR - 10; x += 40) xs.push(x);
-      const near = xs.reduce((bi, x, i) => Math.abs(x - P.x) < Math.abs(xs[bi] - P.x) ? i : bi, 0), gap = clamp(near + pick([-1, 0, 1]), 0, xs.length - 2), rev = Math.random() < 0.5;
-      const lead = beatLead(fall); xs.forEach((x, i) => { if (i === gap || i === gap + 1) return; const j = rev ? xs.length - 1 - i : i; const m = new Meteor(x, lead + j * step8); m.chain = true; spawnHz(m); });
-      if (themeCfg().indoor) Sound.sfx.rumble(); else Sound.sfx.erupt(); shake(0.4); this.next = 2.2 + xs.length * step8; return;
-    }
-    const tx = Math.random() < 0.6 ? P.x + rand(-40, 40) : rand(10, W - 10);
-    spawnHz(new Meteor(tx, fall));
-    if (D >= 2 && Math.random() < 0.3) spawnHz(new Meteor(tx + pick([-1, 1]) * rand(40, 70), fall + 0.15));
-    this.next = Math.max(0.3 * G.speed, 0.24, 0.65 - D * 0.07) * rand(0.8, 1.2);   // 고배속에서도 실제로 0.3초에 한 발 이하
-  }
+  update(dt) { WK.patUpdate(this, 'meteor', dt); }   // 언제 · 어디에 낼지는 wasm/src/pat_basic.rs
 }
 class PatPony extends Pattern {
   constructor() { super(8); this.next = 0.2; }
-  update(dt) {
-    this.t += dt; this.next -= dt;
-    if (this.next > 0 || this.t > this.dur - 2) return;
-    const dir = pick([-1, 1]), n = Math.min(4, 1 + randi(0, Math.floor(1 + G.diff)));
-    G.warnings.push({ side: -dir, t: 0, dur: 1.0 * G.speed, spawn: () => {
-      let off = 0;
-      for (let i = 0; i < n; i++) { spawnHz(new Pony(dir, off)); off += 28 + (Math.random() < 0.5 ? rand(2, 8) : rand(76, 104)); }
-      Sound.sfx.neigh();
-    } });
-    this.next = Math.max(1.6, 2.8 - G.diff * 0.2);
-  }
+  update(dt) { WK.patUpdate(this, 'pony', dt); }   // 언제 · 어디에 낼지는 wasm/src/pat_basic.rs
 }
 class PatWind extends Pattern {
   constructor() { super(7.5); this.dir = pick([-1, 1]); this.next = 1.0; this.started = false; Sound.sfx.whoosh(); }
-  update(dt) {
-    this.t += dt; this.next -= dt;
-    if (this.t > 0.8) { this.started = true; G.windTarget = this.dir * Math.min(52, 48 + G.diff * 6); }   /* 맞바람에도 움직일 수 있게 */
-    if (Math.random() < dt * 30) fx({ x: this.dir > 0 ? -10 : W + 10, y: rand(20, GROUND - 2), vx: this.dir * rand(220, 320), life: 1.6, kind: 'streak', len: randi(6, 16), col: 'rgba(255,244,224,0.5)' });
-    if (this.started && Math.random() < dt * 12) fx({ x: this.dir > 0 ? -4 : W + 4, y: rand(90, GROUND), vx: this.dir * rand(90, 160), vy: rand(-20, 20), life: 2.5, col: pick([C.yel[2], C.yel[3], C.leaf[3]]), kind: 'petal' });
-    if (this.started && Math.random() < dt * 4) Sound.sfx.gust();
-    if (!this.started || this.next > 0 || this.t > this.dur - 1) return;
-    const pb = Math.random() < 0.14 ? new Tewak(this.dir) : new Pebble(this.dir);
-    if (pb instanceof Pebble) { if (this.lastLow && pb.y < GROUND - 24) pb.x -= this.dir * 55; this.lastLow = pb.y > GROUND - 10; }   // 낮은 돌 뒤 높은 돌은 착지할 틈을 두고
-    spawnHz(pb);
-    this.next = Math.max(0.24 * G.speed, Math.max(0.22, 0.55 - G.diff * 0.06) * rand(0.7, 1.3));
-  }
+  update(dt) { WK.patUpdate(this, 'wind', dt); }   // 언제 · 어디에 낼지는 wasm/src/pat_basic.rs
   end() { G.windTarget = 0; }
 }
 const QUIZ = [
@@ -838,60 +775,24 @@ class Pig {
 }
 class PatSuitcase extends Pattern {
   constructor() { super(7.5); this.next = 0.3; this.flash = 1.5; }
-  update(dt) {
-    this.t += dt; this.next -= dt; this.flash -= dt;
-    if (this.flash <= 0 && this.t < this.dur - 1) { this.flash = rand(1.4, 2.4); flashFx(0.03, '#fff4e0'); Sound.sfx.shutter(); }
-    if (this.next > 0 || this.t > this.dur - 2) return;
-    const dir = pick([-1, 1]), n = 1 + randi(0, Math.min(3, 1 + Math.floor(G.diff)));
-    G.warnings.push({ side: -dir, kind: 'case', t: 0, dur: Math.max(0.6, 0.9 - G.diff * 0.06) * G.speed, spawn: () => { let off = 0; for (let i = 0; i < n; i++) { spawnHz(new Suitcase(dir, off)); off += rand(30, 70); } Sound.sfx.roll(); } });
-    this.next = Math.max(1.1, 2.0 - G.diff * 0.18);
-  }
+  update(dt) { WK.patUpdate(this, 'suitcase', dt); }   // 언제 · 어디에 낼지는 wasm/src/pat_basic.rs
 }
 class PatPig extends Pattern {
   constructor() { super(7); this.next = 0.3; Sound.sfx.oink(); }
-  update(dt) {
-    this.t += dt; this.next -= dt;
-    if (this.next > 0 || this.t > this.dur - 1.8) return;
-    const dir = pick([-1, 1]), n = 1 + randi(0, Math.min(2, Math.floor(G.diff)));
-    G.warnings.push({ side: -dir, kind: 'pig', t: 0, dur: Math.max(0.6, 0.9 - G.diff * 0.06) * G.speed, spawn: () => { let off = 0; for (let i = 0; i < n; i++) { spawnHz(new Pig(dir, off)); off += rand(60, 110); } Sound.sfx.oink(); } });
-    this.next = Math.max(1.2, 2.1 - G.diff * 0.16);
-  }
+  update(dt) { WK.patUpdate(this, 'pig', dt); }   // 언제 · 어디에 낼지는 wasm/src/pat_basic.rs
 }
 class PatHarvest extends Pattern {
   constructor() { super(8); this.next = 0.5; }
-  update(dt) {
-    this.t += dt; this.next -= dt;
-    if (this.next > 0 || this.t > this.dur - 1.2) return;
-    const x = rand(14, W - 14);
-    if (Math.random() < 0.45 + G.diff * 0.05) { const sl = Math.max(1, G.speed / 1.5), r = new Rotten(x, -VOFF - 10, 0, 40 / sl); r.grav = 560 / (sl * sl); r.falling = true; r.life = 3.2 * sl; spawnHz(r); G.decals.push({ x, t: 0, life: 0.9 * sl, mark: true }); }   // 고배속에선 천천히 떨어져 실제 경고 시간이 0.5초 넘게
-    else G.pickups.push(new Pickup('tang', x, -VOFF - 10, rand(-20, 20), 20));
-    this.next = Math.max(0.12 * G.speed, 0.16, 0.42 - G.diff * 0.05) * rand(0.7, 1.3);   // 실제로 0.12초에 하나 이하
-  }
+  update(dt) { WK.patUpdate(this, 'harvest', dt); }   // 언제 · 어디에 낼지는 wasm/src/pat_basic.rs
 }
 class PatTyphoon extends Pattern {   // 태풍 상륙: 정전 → 먹구름 · 비바람 · 갈래 번개 (번개 칠 때 잠깐 보임)
   constructor() { super(9); this.next = 1.2; this.bolt = 1.4; this.dir = pick([-1, 1]); G.dark = 0.01; G.storm = 0; G.stormDir = this.dir; Sound.sfx.whoosh(); }
-  update(dt) {
-    this.t += dt; this.next -= dt; this.bolt -= dt;
-    const out = this.t > this.dur - 0.8;
-    G.dark = out ? Math.max(0, G.dark - dt * 2) : this.t < 0.75 ? (Math.floor(this.t * 12) % 3 === 1 ? 0.12 : Math.min(1, this.t * 1.6)) : Math.min(1, G.dark + dt * 2);   // 처음엔 전기가 나가듯 깜빡이며 어두워짐
-    G.storm = out ? Math.max(0, G.storm - dt * 1.5) : Math.min(1, G.storm + dt * 1.2);
-    G.windTarget = this.dir * Math.min(52, 30 + G.diff * 5);
-    const d = this.dir, up = d > 0 ? -60 : 60;
-    if (Math.random() < dt * 75) fx({ x: rand(0, W) + up, y: -VOFF - 6, vx: d * rand(80, 110), vy: rand(320, 380), life: 0.9, kind: 'rain', len: randi(5, 7), near: true, col: 'rgba(205,220,245,0.7)' });   // 앞 빗줄기
-    if (Math.random() < dt * 55) fx({ x: rand(0, W) + up, y: -VOFF - 6, vx: d * 60, vy: 240, life: 1.2, kind: 'rain', len: 3, col: 'rgba(165,180,215,0.35)' });   // 먼 빗줄기
-    if (Math.random() < dt * 4) fx({ x: d > 0 ? -6 : W + 6, y: rand(40, GROUND - 6), vx: d * rand(170, 250), vy: rand(-30, 20), life: 2.6, kind: 'petal', col: pick([C.leaf[2], C.leaf[3], C.org[2]]) });   // 바람에 날리는 잎
-    if (Math.random() < dt * 7) fx({ x: d > 0 ? -12 : W + 12, y: rand(-VOFF + 30, GROUND - 4), vx: d * rand(300, 420), life: 1.1, kind: 'streak', len: randi(8, 18), col: 'rgba(225,232,245,0.4)' });   // 돌풍 줄
-    if (this.bolt <= 0 && this.t < this.dur - 1) {
-      this.bolt = rand(1.2, 2.2); this.flash2 = 0.11; G.lightning = Math.max(G.lightning || 0, 0.16); Sound.sfx.thunder(); shake(0.2);
-      const pts = []; let bx = rand(30, W - 30); for (let y = -VOFF; y < GROUND - 64; y += randi(5, 9)) { bx += rand(-7, 7); pts.push([Math.round(bx), y]); }   // 하늘에서 먼 땅으로 내리꽂히는 갈래 번개
-      const br = []; for (let k = 0; k < 2; k++) { const s0 = pts[randi(2, Math.max(3, pts.length - 4))]; let x2 = s0[0], y2 = s0[1]; const sd = pick([-1, 1]), seg = [[x2, y2]]; for (let j = 0; j < randi(3, 5); j++) { x2 += sd * rand(3, 8); y2 += randi(4, 8); seg.push([Math.round(x2), y2]); } br.push(seg); }
-      G.boltFx = { pts, br, t: 0.22 };
-    }
-    if (this.flash2 > 0) { this.flash2 -= dt; if (this.flash2 <= 0) G.lightning = Math.max(G.lightning || 0, 0.07); }   // 번쩍 · 번쩍 두 번
-    if (this.next > 0 || this.t > this.dur - 1.5) return;
-    if (Math.random() < 0.55) spawnHz(Math.random() < 0.15 ? new Tewak(this.dir) : new Pebble(this.dir));
-    else spawnHz(new Rise(clamp(P.x + rand(-30, 30), 16, W - 16), Math.max(0.7, 0.9 - G.diff * 0.05) * G.speed, 0.6));
-    this.next = Math.max(0.45, 1.0 - G.diff * 0.1);
+  update(dt) { WK.patUpdate(this, 'typhoon', dt); }   // 언제 · 어디에 낼지는 wasm/src/pat_basic.rs
+  // 갈래 번개 모양 (Rust가 번개 칠 때 부름): 하늘에서 먼 땅으로 내리꽂히는 줄기 + 곁가지 둘
+  makeBolt() {
+    const pts = []; let bx = rand(30, W - 30); for (let y = -VOFF; y < GROUND - 64; y += randi(5, 9)) { bx += rand(-7, 7); pts.push([Math.round(bx), y]); }
+    const br = []; for (let k = 0; k < 2; k++) { const s0 = pts[randi(2, Math.max(3, pts.length - 4))]; let x2 = s0[0], y2 = s0[1]; const sd = pick([-1, 1]), seg = [[x2, y2]]; for (let j = 0; j < randi(3, 5); j++) { x2 += sd * rand(3, 8); y2 += randi(4, 8); seg.push([Math.round(x2), y2]); } br.push(seg); }
+    G.boltFx = { pts, br, t: 0.22 };
   }
   end() { G.dark = 0; G.windTarget = 0; G.storm = 0; G.boltFx = null; }
 }
@@ -1212,19 +1113,7 @@ class Gull {
 }
 class PatGull extends Pattern {
   constructor() { super(7.5); this.next = 0.4; }
-  update(dt) {
-    this.t += dt; this.next -= dt;
-    if (this.next > 0 || this.t > this.dur - 1.3) return;
-    if (G.diff >= 0.5 && !this.paired && G.patterns.length <= 1 && Math.random() < 0.4) {
-      // 갈매기 편대: 같은 쪽에서 8분음표마다 한 마리씩, 내리꽂는 자리를 30px씩 밀며 줄지어 강하 → 높이 한 번 뛰면 줄줄이 넘어감
-      const n = randi(3, 5), dir = pick([-1, 1]), step8 = 60 / (Sound.tempo || 138) / 2 * G.speed, base = clamp(P.x - dir * 45, 40, W - 40);
-      for (let i = 0; i < n; i++) { const gl = new Gull(); gl.dir = dir; gl.tx = clamp(base + dir * i * 30, 16, W - 16); gl.sx = gl.x = gl.tx - dir * 190; gl.t = Math.min(0, -(beatLead(gl.T / 2) - gl.T / 2)) - i * step8; gl.chain = true; spawnHz(gl); }
-      Sound.sfx.gull(); this.next = n * step8 + 1.6 * G.speed; return;
-    }
-    spawnHz(new Gull());
-    if (G.diff > 1.5 && Math.random() < 0.35) spawnHz(new Gull());
-    this.next = Math.max(0.5, 1.1 - G.diff * 0.1) * rand(0.8, 1.2);
-  }
+  update(dt) { WK.patUpdate(this, 'gull', dt); }   // 언제 · 어디에 낼지는 wasm/src/pat_basic.rs
 }
 // ── 렌터카 대행진 ──
 class RentCar {
@@ -1236,13 +1125,7 @@ class RentCar {
 }
 class PatCar extends Pattern {
   constructor() { super(7.5); this.next = 0.3; }
-  update(dt) {
-    this.t += dt; this.next -= dt;
-    if (this.next > 0 || this.t > this.dur - 2) return;
-    const dir = pick([-1, 1]), n = 1 + (G.diff > 1.2 && Math.random() < 0.5 ? 1 : 0);
-    G.warnings.push({ side: -dir, kind: 'car', t: 0, dur: Math.max(0.7, 1.0 - G.diff * 0.06) * G.speed, spawn: () => { let off = 0; for (let i = 0; i < n; i++) { spawnHz(new RentCar(dir, off)); off += rand(90, 130); } } });
-    this.next = Math.max(1.4, 2.4 - G.diff * 0.18);
-  }
+  update(dt) { WK.patUpdate(this, 'car', dt); }   // 언제 · 어디에 낼지는 wasm/src/pat_basic.rs
 }
 
 // ── 유채꽃 벌떼: 모두 같은 물결길을 따라 날아옴 (높이 뜬 구간 아래는 안전 · 낮은 구간은 점프 · 귤로 잡기) ──
@@ -1257,13 +1140,7 @@ class Bee {
 }
 class PatBee extends Pattern {
   constructor() { super(7.5); this.next = 0.5; this.dir = pick([-1, 1]); }
-  update(dt) {
-    this.t += dt; this.next -= dt;
-    if (this.next > 0 || this.t > this.dur - 1.6) return;
-    const dir = this.dir, ph = rand(0, 6.28), n = 4 + Math.min(3, Math.floor(G.diff)), sp = (80 + G.diff * 8) * Math.min(1, 1.35 / G.speed);
-    G.warnings.push({ side: -dir, ph, t: 0, dur: 0.8 * G.speed, spawn: () => { Sound.sfx.buzz(); for (let i = 0; i < n; i++) spawnHz(new Bee(dir, i, sp, ph)); } });
-    this.next = Math.max(2.2, 2.8 - G.diff * 0.15);
-  }
+  update(dt) { WK.patUpdate(this, 'bee', dt); }   // 언제 · 어디에 낼지는 wasm/src/pat_basic.rs
 }
 
 // ── 참새 떼: 참새 몇 마리가 무리 지어 낮게(구르기로 밑을 통과) · 높게(가만히) 날아 지나감 ──
@@ -1278,14 +1155,7 @@ class Plane {   // 참새 무리 (낮게 2마리 · 높게 3마리 — 판정 �
 }
 class PatPlane extends Pattern {
   constructor() { super(7.5); this.next = 0.4; }
-  update(dt) {
-    this.t += dt; this.next -= dt;
-    if (this.next > 0 || this.t > this.dur - 1.8) return;
-    const dir = pick([-1, 1]), low = Math.random() < 0.55, sp = (150 + G.diff * 10) * Math.min(1, 1.35 / G.speed);
-    spawnHz(new Plane(dir, low, sp));
-    if (G.diff > 1.6 && Math.random() < 0.35) { const p2 = new Plane(dir, !low, sp); p2.warn += 0.9 * G.speed; spawnHz(p2); }
-    this.next = Math.max(1.3, 2.1 - G.diff * 0.15);
-  }
+  update(dt) { WK.patUpdate(this, 'plane', dt); }   // 언제 · 어디에 낼지는 wasm/src/pat_basic.rs
 }
 // ── 귤 택배 왔수다: 그림자 자리에 상자가 곧게 떨어지고, 떨어진 상자는 밟거나 쏘면 귤이 쏟아짐 ──
 const PARCEL = SPR.PARCEL;
@@ -1299,13 +1169,7 @@ class Parcel {
 }
 class PatParcel extends Pattern {
   constructor() { super(7); this.next = 0.6; }
-  update(dt) {
-    this.t += dt; this.next -= dt;
-    if (this.next > 0 || this.t > this.dur - 2) return;
-    const n = 2 + Math.min(2, Math.floor(G.diff));
-    for (let i = 0; i < n; i++) { const x = clamp(P.x + (i - (n - 1) / 2) * 34 + rand(-6, 6), 16, G.arenaR - 16); if (G.hz.some(h => h instanceof Parcel && Math.abs(h.x - x) < 14)) continue; spawnHz(new Parcel(x, (0.65 + i * 0.18) * G.speed)); }
-    this.next = Math.max(1.5, 2.2 - G.diff * 0.15);
-  }
+  update(dt) { WK.patUpdate(this, 'parcel', dt); }   // 언제 · 어디에 낼지는 wasm/src/pat_basic.rs
 }
 
 // ── 밭담 바람구멍: 현무암 돌담이 옆에서 밀려옴 · 뚫린 구멍으로만 통과 (바닥 = 구르기, 가운데 = 점프, 위 = 2단 점프) ──
@@ -1321,15 +1185,7 @@ class Glider {
 }
 class PatGlider extends Pattern {
   constructor() { super(7.5); this.next = 0.2; this.gl = 0; this.dir = pick([-1, 1]); this.high = Math.random() < 0.5; }
-  update(dt) {
-    this.t += dt; this.next -= dt; this.gl -= dt;
-    if (this.t > this.dur - 1.2) return;
-    if (this.gl <= 0) { const gl = new Glider(this.dir, this.high, 52 * Math.min(1, 1.35 / G.speed)); spawnHz(gl); gl.pat = null; this.high = !this.high; this.gl = 1.5; }
-    if (this.next > 0 || this.t < 1.2) return;
-    spawnHz(new Hopper(-this.dir));
-    if (G.diff >= 1.5 && Math.random() < 0.35) spawnHz(new Rise(clamp(P.x + rand(-8, 8), 16, W - 16), Math.max(0.65, 0.95 - G.diff * 0.06) * G.speed, 0.6));
-    this.next = Math.max(0.7, 1.3 - G.diff * 0.1) * rand(0.85, 1.15);
-  }
+  update(dt) { WK.patUpdate(this, 'glider', dt); }   // 언제 · 어디에 낼지는 wasm/src/pat_basic.rs
   end() { for (const h of G.hz) if (h instanceof Glider) h.life = Math.min(h.life, 1); }
 }
 
@@ -1355,16 +1211,7 @@ class Dolphin {
 }
 class PatDolphin extends Pattern {
   constructor() { super(7.5); this.next = 0.3; }
-  update(dt) {
-    this.t += dt; this.next -= dt;
-    if (this.next > 0 || this.t > this.dur - 2) return;
-    const span = rand(130, 170), end = clamp(P.x + rand(-14, 14), 20, G.arenaR - 20), dir = end - span < 10 ? -1 : end + span > G.arenaR - 10 ? 1 : pick([-1, 1]);
-    // 떨어질 자리가 숨비 근처 → 옆으로 비키거나 아치 밑으로 들어가기
-    const x1 = end, x0 = clamp(x1 - dir * span, 10, G.arenaR - 10), peak = rand(62, 84), T = Math.max(0.8, Math.abs(x1 - x0) / 150) * G.speed;
-    spawnHz(new Dolphin(x0, x1, peak, T, 0.9 * G.speed));
-    if (G.diff >= 1.5 && Math.random() < 0.45) { const y0 = clamp(x1 + dir * rand(60, 90), 10, G.arenaR - 10), y1 = clamp(y0 + dir * span * 0.8, 10, G.arenaR - 10); if (Math.abs(y1 - y0) > 90) spawnHz(new Dolphin(y0, y1, peak * 0.8, Math.max(0.8, Math.abs(y1 - y0) / 150) * G.speed, 1.3 * G.speed)); }
-    this.next = Math.max(1.3, 1.9 - G.diff * 0.12);
-  }
+  update(dt) { WK.patUpdate(this, 'dolphin', dt); }   // 언제 · 어디에 낼지는 wasm/src/pat_basic.rs
 }
 // ── 까마귀 떼: 하늘 위에 앉아 노려보다가(조준선) 줄이 굳으면 그 길로 내리꽂음 ──
 const CROW = SPR.CROW;
@@ -1380,13 +1227,7 @@ class Crow {
 }
 class PatCrow extends Pattern {
   constructor() { super(7.5); this.next = 0.3; }
-  update(dt) {
-    this.t += dt; this.next -= dt;
-    if (this.next > 0 || this.t > this.dur - 2.2) return;
-    const n = 2 + (G.diff >= 2.5 ? 1 : 0);
-    for (let i = 0; i < n; i++) spawnHz(new Crow(clamp(P.x + (i - (n - 1) / 2) * 70 + rand(-10, 10), 20, G.arenaR - 20), (0.55 + i * 0.35) * G.speed));
-    this.next = Math.max(2.0, 2.6 - G.diff * 0.1);
-  }
+  update(dt) { WK.patUpdate(this, 'crow', dt); }   // 언제 · 어디에 낼지는 wasm/src/pat_basic.rs
 }
 
 // ── 방언 비: 제주어 한 낱말이 글자 돌판이 되어 차례로 떨어짐 · 다 떨어지면 뜻이 살짝 ──
@@ -1406,16 +1247,8 @@ class DialectWord {
   draw() { WK.hzDraw(this, 'dialect', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 class PatDialect extends Pattern {
-  constructor() { super(7.5); this.next = 0.3; this.used = []; }
-  update(dt) {
-    this.t += dt; this.next -= dt;
-    if (this.next > 0 || this.t > this.dur - 2.2) return;
-    const pool = DIALECT.filter(d => !this.used.includes(d[0])), [word, mean] = pick(pool.length ? pool : DIALECT); this.used.push(word);
-    spawnHz(new DialectWord(word, mean, P.x + rand(-20, 20), 1.0 * G.speed));
-    // 높은 단계: 가끔 두 번째 낱말이 옆에 조금 늦게 (사이는 비워 둠)
-    if (G.diff >= 1.5 && Math.random() < 0.4) { const [w2, m2] = pick(DIALECT), side = P.x < W / 2 ? 1 : -1; spawnHz(new DialectWord(w2, m2, P.x + side * 150, 1.35 * G.speed)); }
-    this.next = 1.9;
-  }
+  constructor() { super(7.5); this.next = 0.3; this.usedMask = 0; }   // 쓴 낱말: DIALECT 번호 비트
+  update(dt) { WK.patUpdate(this, 'dialect', dt); }   // 언제 · 어디에 낼지는 wasm/src/pat_basic.rs
 }
 
 // ── 설문대할망 · 칼 든 하르방 이벤트용 공격 ──

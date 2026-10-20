@@ -21,6 +21,8 @@ mod hz_item;
 mod js;
 mod music;
 mod noise;
+mod pat;
+mod pat_basic;
 mod player;
 mod scene;
 mod scn_cave;
@@ -267,6 +269,20 @@ pub extern "C" fn sfx_play(id: usize, a: f64, b: f64, now: f64) {
     sfx::play(id, a, b, now)
 }
 
+// ── 시작 ─────────────────────────────────────────────────────
+#[link(wasm_import_module = "g")]
+extern "C" {
+    fn jpanic(p: *const u8, n: usize);
+}
+// 패닉 메시지를 브라우저 콘솔로 (panic = "abort"라 그대로 두면 'unreachable'만 보임)
+#[no_mangle]
+pub extern "C" fn start() {
+    std::panic::set_hook(Box::new(|info| {
+        let s = info.to_string();
+        unsafe { jpanic(s.as_ptr(), s.len()) }
+    }));
+}
+
 // ── 게임 규칙: 장애물 (game · hz · hz_*) ──────────────────────
 static mut TABLES: String = String::new();
 // 이름표 · 장애물 필드 목록 (JSON) 위치 · 길이
@@ -321,4 +337,31 @@ pub unsafe extern "C" fn hz_draw(kind: usize, f: *mut f64, n: usize, which: i32)
 #[no_mangle]
 pub extern "C" fn hz_cmds() -> *const f64 {
     unsafe { (*std::ptr::addr_of!(DRAW_CMDS)).as_ptr() }
+}
+
+// ── 게임 규칙: 패턴 (pat · pat_*) ─────────────────────────────
+static mut PAT_TABLES: String = String::new();
+// 패턴 필드 목록 · 이름표 (JSON) 위치 · 길이
+#[no_mangle]
+pub extern "C" fn pat_tables() -> *const u8 {
+    unsafe {
+        PAT_TABLES = pat::tables_json();
+        (*std::ptr::addr_of!(PAT_TABLES)).as_ptr()
+    }
+}
+#[no_mangle]
+pub extern "C" fn pat_tables_len() -> usize {
+    unsafe { (*std::ptr::addr_of!(PAT_TABLES)).len() }
+}
+// 패턴 한 스텝 (f는 필드 목록대로, 제자리에서 고침)
+#[no_mangle]
+pub unsafe extern "C" fn pat_update(kind: usize, f: *mut f64, n: usize, dt: f64) {
+    (pat::PATS[kind].update)(from_raw_parts_mut(f, n), dt)
+}
+// 경고가 끝났을 때 남겨 둔 동작 (원래 경고의 spawn 클로저)
+#[no_mangle]
+pub extern "C" fn pat_action(kind: usize, act: u32, a: f64, b: f64, c: f64, d: f64) {
+    if let Some(action) = pat::PATS[kind].action {
+        action(act, a, b, c, d)
+    }
 }
