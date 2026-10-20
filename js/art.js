@@ -229,7 +229,7 @@ function araeGlyph(seg, css, h) {
   if (L < 0 || L > 18 || seg.charCodeAt(1) !== 0x119E) { araeCache.set(key, null); return null; }
   const syl = V => String.fromCharCode(0xAC00 + (L * 21 + V) * 28 + Math.max(0, T));
   const probe = PROBE(); probe.font = css; const w = Math.ceil(probe.measureText(syl(18)).width) + 2, H = h + 4;
-  const draw = V => { const c = mkR(w, H), x = c.getContext('2d'); x.font = css; x.textBaseline = 'top'; x.fillStyle = '#000'; x.fillText(syl(V), 1, 1); const d = x.getImageData(0, 0, w, H).data, m = new Uint8Array(w * H); for (let i = 0; i < w * H; i++) m[i] = d[i * 4 + 3] > 110 ? 1 : 0; return m; };
+  const draw = V => { const c = mkR(w, H), x = c.getContext('2d'); x.font = css; x.textBaseline = 'top'; x.fillStyle = '#000'; x.fillText(syl(V), 1, 1); const d = x.getImageData(0, 0, w, H).data, m = new Uint8Array(w * H); if (!(WK && WK.alphaMask(d, 110, m))) for (let i = 0; i < w * H; i++) m[i] = d[i * 4 + 3] > 110 ? 1 : 0; return m; };
   const A = draw(18), Bm = draw(8);
   let tb = -1, sx = 0, n = 0;
   for (let j = 0; j < H; j++) for (let i = 0; i < w; i++) if (Bm[j * w + i] && !A[j * w + i]) { tb = Math.max(tb, j); sx += i; n++; }
@@ -240,7 +240,7 @@ function araeGlyph(seg, css, h) {
     for (const j of rows) { let a = cx, b = cx; while (a > 0 && A[j * w + a - 1]) a--; while (b < w - 1 && A[j * w + b + 1]) b++; for (let i = a; i <= b; i++) A[j * w + i] = 0; }
     const t = Math.max(1, rows.length); for (const j of rows) for (let i = cx - Math.floor(t / 2); i < cx - Math.floor(t / 2) + t; i++) A[j * w + i] = 1;   // 점(ᆞ)
   }
-  for (let j = 0; j < H; j++) for (let i = 0; i < w; i++) if (A[j * w + i]) ox.fillRect(i, j, 1, 1);
+  if (!(WK && WK.maskPaint(A, out, '#000000'))) for (let j = 0; j < H; j++) for (let i = 0; i < w; i++) if (A[j * w + i]) ox.fillRect(i, j, 1, 1);   // WASM: 픽셀마다 fillRect 대신 한 번에
   out.adv = w - 2; araeCache.set(key, out); return out;
 }
 // 옛한글이 섞인 줄: 글자 묶음(grapheme)마다 그리기 · 너비
@@ -266,24 +266,25 @@ function textSprite(str, { font = 'm', color = '#ffffff', outline = INK, shadow 
   const pad = outline ? 1 : 0, sh = shadow ? 1 : 0;
   const out = mkR(raw.width + pad * 2, raw.height + pad * 2 + sh), ox = out.getContext('2d');
   const on = (i, j) => i >= 0 && j >= 0 && i < raw.width && j < raw.height && src[(j * raw.width + i) * 4 + 3] > 110;
-  if (outline) {
+  const bb = WK && HEX6.test(color) && (!outline || HEX6.test(outline)) && WK.textSprite(src, raw.width, raw.height, out, outline, shadow, color);   // WASM: 먹선 · 글자를 RGBA로 한 번에 (1px fillRect 수천 번이 다시 읽을 때 한꺼번에 그려져 멈칫하던 것)
+  if (!bb && outline) {
     ox.fillStyle = outline;
     for (let j = -1; j <= raw.height; j++) for (let i = -1; i <= raw.width; i++) {
       if (!on(i, j) && (on(i - 1, j) || on(i + 1, j) || on(i, j - 1) || on(i, j + 1) || (shadow && (on(i, j - 2) || on(i - 1, j - 2) || on(i + 1, j - 2))))) ox.fillRect(i + pad, j + pad, 1, 1);
     }
   }
-  ox.fillStyle = color;
-  for (let j = 0; j < raw.height; j++) for (let i = 0; i < raw.width; i++) if (on(i, j)) ox.fillRect(i + pad, j + pad, 1, 1);
+  if (!bb) { ox.fillStyle = color; for (let j = 0; j < raw.height; j++) for (let i = 0; i < raw.width; i++) if (on(i, j)) ox.fillRect(i + pad, j + pad, 1, 1); }
   let res = out;
   if (trim) {
-    const d = ox.getImageData(0, 0, out.width, out.height).data;
     let x0 = out.width, y0 = out.height, x1 = -1, y1 = -1;
-    for (let j = 0; j < out.height; j++) for (let i = 0; i < out.width; i++) if (d[(j * out.width + i) * 4 + 3]) { x0 = Math.min(x0, i); x1 = Math.max(x1, i); y0 = Math.min(y0, j); y1 = Math.max(y1, j); }
+    if (bb) [x0, y0, x1, y1] = bb;
+    else { const d = ox.getImageData(0, 0, out.width, out.height).data; for (let j = 0; j < out.height; j++) for (let i = 0; i < out.width; i++) if (d[(j * out.width + i) * 4 + 3]) { x0 = Math.min(x0, i); x1 = Math.max(x1, i); y0 = Math.min(y0, j); y1 = Math.max(y1, j); } }
     if (x1 >= 0) { res = mkR(x1 - x0 + 1, y1 - y0 + 1); res.getContext('2d').drawImage(out, -x0, -y0); }
   }
   textCache.set(key, res);
   return res;
 }
+const HEX6 = /^#[0-9a-f]{6}$/i;   // WASM 글자는 불투명 색만
 const glyphCache = new Map();
 function glyph(ch, font, color, outline) {
   const key = [ch, font, color, outline].join('|');
