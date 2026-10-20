@@ -10,12 +10,12 @@
 let WK = null, WASM_MEM = null;
 const GAME_SCRIPTS = ['chars', 'portraits', 'boss', 'scenery', 'audio', 'game'];
 (async () => {
-  const url = 'wasm/jeju.wasm?v=290', imports = { m: { jsin: Math.sin, jcos: Math.cos, jasin: Math.asin, jexp: Math.exp, jpow: Math.pow, jatan2: Math.atan2, jhypot2: Math.hypot, jhypot3: Math.hypot }, g: gameImports() };
+  const url = 'wasm/jeju.wasm?v=293', imports = { m: { jsin: Math.sin, jcos: Math.cos, jasin: Math.asin, jexp: Math.exp, jpow: Math.pow, jatan2: Math.atan2, jhypot2: Math.hypot, jhypot3: Math.hypot }, g: gameImports() };
   imports.g.jpanic = (p, n) => console.error('Rust 패닉: ' + new TextDecoder().decode(new Uint8Array(WASM_MEM.buffer, p, n)));
   try {
     let inst;
     if (location.protocol === 'file:') {   // file://에선 fetch가 막혀서 base64 사본(wasm/jeju-wasm.js)을 스크립트로 읽음
-      await new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'wasm/jeju-wasm.js?v=290'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+      await new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'wasm/jeju-wasm.js?v=293'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
       inst = (await WebAssembly.instantiate(Uint8Array.from(atob(window.JEJU_WASM), c => c.charCodeAt(0)), imports)).instance;
     } else {
       try { inst = (await WebAssembly.instantiateStreaming(fetch(url), imports)).instance; }
@@ -24,7 +24,7 @@ const GAME_SCRIPTS = ['chars', 'portraits', 'boss', 'scenery', 'audio', 'game'];
     WASM_MEM = inst.exports.memory; inst.exports.start();
     WK = wkApi(inst.exports);
   } catch (e) { console.error('WASM을 불러오지 못함', e); wasmMissing(); return; }
-  for (const n of GAME_SCRIPTS) { const s = document.createElement('script'); s.src = `js/${n}.js?v=290`; s.async = false; document.body.appendChild(s); }   // async = false: 붙인 순서대로 실행
+  for (const n of GAME_SCRIPTS) { const s = document.createElement('script'); s.src = `js/${n}.js?v=293`; s.async = false; document.body.appendChild(s); }   // async = false: 붙인 순서대로 실행
 })();
 // WASM 없이는 배경 · 물리가 없어 시작할 수 없음 (아주 오래된 브라우저 등)
 function wasmMissing() {
@@ -107,26 +107,29 @@ function wkApi(ex) {
   //  숫자 · 참거짓 · 이름(단계 같은 문자열은 목록 안 번호) · 아직 없는 숫자는 NaN으로 넘기고 NaN이 오면 그대로 둠
   HZ = JSON.parse(new TextDecoder().decode(u8(ex.hz_tables(), ex.hz_tables_len())));
   const kindIdx = Object.fromEntries(Object.keys(HZ.kinds).map((k, i) => [k, i]));
-  const hzBuf = ex.alloc(2048 * 8), boxBuf = ex.alloc(64 * 8);
-  const hzView = n => new Float64Array(ex.memory.buffer, hzBuf, n);
+  //  칸은 둘: 장애물 · 패턴 · 그리기용(hzBuf)과 숨비용(pBuf) — 숨비가 도는 중에 장애물을 다시 불러도(내려찍기로 부수기) 서로 덮어쓰지 않게
+  const hzBuf = ex.alloc(2048 * 8), pBuf = ex.alloc(64 * 8), boxBuf = ex.alloc(64 * 8);
+  const view = (buf, n) => new Float64Array(ex.memory.buffer, buf, n);
   //  목록(l, 그리기용 · 맨 뒤)은 두 칸(시작 칸 · 개수)이고, 숫자들(배열 · 객체를 펼친 것)은 고정 칸 뒤에 이어 붙임 — 읽기만 하므로 되쓰지 않음
+  //  없앨 수 있는 숫자(o)는 NaN이 오면 undefined로 되씀
   const slots = K => K.reduce((n, [, t]) => n + (t === 'l' ? 2 : 1), 0);
   const flat = (v, out = []) => { if (typeof v === 'number') out.push(v); else if (v) for (const x of Array.isArray(v) ? v : Object.values(v)) flat(x, out); return out; };
-  const pack = (h, K) => {
-    const n = slots(K), f = hzView(n), extra = []; let i = 0;
-    for (const [name, t] of K) { const v = h[name]; if (t === 'l') { const a = flat(v); f[i++] = n + extra.length; f[i++] = a.length; extra.push(...a); } else f[i++] = t === 'n' ? (v ?? NaN) : t === 'b' ? (v ? 1 : 0) : t.indexOf(v); }
-    if (extra.length) hzView(n + extra.length).set(extra, n);
+  const pack = (h, K, buf = hzBuf) => {
+    const n = slots(K), f = view(buf, n), extra = []; let i = 0;
+    for (const [name, t] of K) { const v = h[name]; if (t === 'l') { const a = flat(v); f[i++] = n + extra.length; f[i++] = a.length; extra.push(...a); } else f[i++] = t === 'n' || t === 'o' ? (v ?? NaN) : t === 'b' ? (v ? 1 : 0) : t.indexOf(v); }
+    if (extra.length) view(buf, n + extra.length).set(extra, n);
     return n + extra.length;
   };
-  const unpack = (h, K) => {
-    const f = hzView(slots(K)); let i = 0;
-    for (const [name, t] of K) { if (t === 'l') { i += 2; continue; } const v = f[i++]; if (t === 'n') { if (!Number.isNaN(v)) h[name] = v; } else h[name] = t === 'b' ? v !== 0 : t[v]; }
+  const unpack = (h, K, buf = hzBuf) => {
+    const f = view(buf, slots(K)); let i = 0;
+    for (const [name, t] of K) { if (t === 'l') { i += 2; continue; } const v = f[i++]; if (t === 'n') { if (!Number.isNaN(v)) h[name] = v; } else h[name] = t === 'o' ? (Number.isNaN(v) ? undefined : v) : t === 'b' ? v !== 0 : t[v]; }
   };
   // 지금 판의 값 (game.rs Ctx 순서)
   const setCtx = () => {
-    const c = new Float64Array(ex.memory.buffer, ex.hz_ctx(), 17);
+    const c = new Float64Array(ex.memory.buffer, ex.hz_ctx(), 19);
     c[0] = W; c[1] = P.x; c[2] = P.y; c[3] = P.dead ? 1 : 0; c[4] = G.arenaL; c[5] = G.arenaR; c[6] = G.speed; c[7] = G.magnetT || 0; c[8] = Sound.tempo || 0;
     c[9] = G.tier; c[10] = G.storm || 0; c[11] = G.lightning || 0; c[12] = amb.t; c[13] = G.diff; c[14] = G.patterns.length; c[15] = themeCfg().indoor ? 1 : 0; c[16] = G.dark || 0;
+    c[17] = G.ammo; c[18] = G.slow;
   };
   // Rust가 부르는 JS 일 (game.rs HOOKS): 부르기 전에 지금 객체를 최신 값으로 맞춰 둠
   let cur = null;
@@ -146,10 +149,17 @@ function wkApi(ex) {
     ripple: (x, d) => { const r = new Ripple(x, d, (105 + G.tier * 5) * evK()); r.pat = cur.h.pat; spawnHz(r); },
     gset: (k, v) => { G[HZ.gfields[k]] = v; },
     beatLead: d => beatLead(d),
+    // 숨비 (wasm/src/player.rs)
+    pghost: (x, y, life, col) => G.ghosts.push({ img: curFrame(), x, y, life, col: hzCol(col) }),
+    beatAct: (x, y, scoring) => onBeatAct(x, y, !!scoring) ? 1 : 0,
+    throwShot: () => G.shots.push(new Shot(P.x + P.face * 7, P.y - 18, P.face)),
+    poundKills: () => poundKills(),
+    scarf: () => updateScarf(),
   };
   const hooks = HZ.hooks.map(n => HOOK[n]);
-  HZ.hook = (id, a, b, c, d) => { if (cur.h) unpack(cur.h, cur.K); return hooks[id](a, b, c, d); };
-  const call = (h, kind, fn) => { const K = HZ.kinds[kind], n = pack(h, K); setCtx(); cur = { h, K }; const r = fn(kindIdx[kind], n); cur = null; unpack(h, K); return r !== 0; };
+  HZ.hook = (id, a, b, c, d) => { if (cur.h) unpack(cur.h, cur.K, cur.buf); return hooks[id](a, b, c, d); };
+  //  cur: 지금 Rust가 돌리는 객체 (훅 · 이미지 묻기에 씀) — 안쪽에서 또 불러도 끝나면 되돌림
+  const call = (h, kind, fn) => { const K = HZ.kinds[kind], n = pack(h, K); setCtx(); const prev = cur; cur = { h, K, buf: hzBuf }; const r = fn(kindIdx[kind], n); cur = prev; unpack(h, K); return r !== 0; };
   // 패턴 (wasm/src/pat.rs): 상태는 패턴 객체에 · Rust가 만든 장애물은 fresh[번호]로 가리킴
   const PT = JSON.parse(new TextDecoder().decode(u8(ex.pat_tables(), ex.pat_tables_len())));
   const patIdx = Object.fromEntries(Object.keys(PT.kinds).map((k, i) => [k, i]));
@@ -266,13 +276,20 @@ function wkApi(ex) {
       return out;
     },
     hzOn(h, kind, ev, sx = 0, sy = 0) { return call(h, kind, (k, n) => ex.hz_on(k, hzBuf, n, HZ.events.indexOf(ev), sx, sy)); },
+    // 숨비 한 스텝: 입력은 비트로 (조작 가능 · 누르고 있음 · 이번에 눌림 — 눌림은 여기서 씀)
+    playerUpdate(P, dt, up, wind, al, ar) {
+      const bits = (!G.cut && !G.choice ? 1 : 0) | (held.left ? 2 : 0) | (held.right ? 4 : 0) | (held.jump ? 8 : 0) | (held.throw ? 16 : 0)
+        | (pressed.jump ? 32 : 0) | (pressed.roll ? 64 : 0) | (pressed.down ? 128 : 0) | (pressed.throw ? 256 : 0);
+      if (!P.dead) pressed.jump = pressed.roll = pressed.down = pressed.throw = false;
+      const K = HZ.player, n = pack(P, K, pBuf); setCtx(); const prev = cur; cur = { h: P, K, buf: pBuf }; ex.player_update(pBuf, n, dt, bits, up, wind, al, ar); cur = prev; unpack(P, K, pBuf);
+    },
     // 패턴 한 스텝 · 경고가 끝났을 때 남겨 둔 동작
-    patUpdate(h, kind, dt) { const K = PT.kinds[kind], n = pack(h, K); setCtx(); const prev = cur; cur = { h, K, kind }; fresh = []; ex.pat_update(patIdx[kind], hzBuf, n, dt); cur = prev; unpack(h, K); },
+    patUpdate(h, kind, dt) { const K = PT.kinds[kind], n = pack(h, K); setCtx(); const prev = cur; cur = { h, K, kind, buf: hzBuf }; fresh = []; ex.pat_update(patIdx[kind], hzBuf, n, dt); cur = prev; unpack(h, K); },
     patAction(kind, act, a, b, c, d) { setCtx(); const prev = cur; cur = { h: null, K: null, kind }; fresh = []; ex.pat_action(patIdx[kind], act, a, b, c, d); cur = prev; },
     // 그리기 (which 0: 그림 · 1: 땅에 먼저 깔리는 예고) — Rust가 명령을 쌓으면 여기서 캔버스에 찍음
     hzDraw(h, kind, which) {
-      const K = HZ.dkinds[kind], n = pack(h, K); setCtx(); cur = { h, K };
-      const m = ex.hz_draw(kindIdx[kind], hzBuf, n, which); cur = null; unpack(h, K);
+      const K = HZ.dkinds[kind], n = pack(h, K); setCtx(); const prev = cur; cur = { h, K, buf: hzBuf };
+      const m = ex.hz_draw(kindIdx[kind], hzBuf, n, which); cur = prev; unpack(h, K);
       runDraw(new Float64Array(ex.memory.buffer, ex.hz_cmds(), m).slice(), h);
     },
     // 회오리 깔때기 한 장 (초당 30번)
@@ -288,13 +305,6 @@ function wkApi(ex) {
         for (let i = 0; i < n; i++) { const p = list[from + i], o = i * 8; p.x = b[o]; p.y = b[o + 1]; p.vx = b[o + 2]; p.vy = b[o + 3]; p.life = b[o + 4]; if (b[o + 7] === 5) rainSplash(p); }
         from = end;
       }
-    },
-    // 숨비 이동: 걷기는 값 하나, 낙하는 고정 칸(PLAYER)에 넣고 부름
-    walk: (vx, dir, onGround, up, dt) => ex.player_walk(vx, dir, onGround ? 1 : 0, up, dt),
-    fall(P, dt, wind, al, ar, hold) {
-      const s = new Float64Array(ex.memory.buffer, ex.player_buf(), 12);
-      s.set([P.x, P.y, P.vx, P.vy, dt, wind, P.rollT, al, ar, P.pound ? 1 : 0, hold ? 1 : 0, P.onGround ? 1 : 0]);
-      ex.player_fall(); P.x = s[0]; P.y = s[1]; P.vy = s[3];
     },
     // 글자: 알파만 넘기고 RGBA를 받아 캔버스에 한 번에 · textSprite는 다듬을 경계 상자 [x0, y0, x1, y1]를 돌려줌
     textSprite(src, w, h, out, outline, shadow, color) {

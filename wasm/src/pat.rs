@@ -142,6 +142,7 @@ pub fn tables_json() -> String {
         Ty::Bool => "\"b\"".to_string(),
         Ty::Enum(v) => list(v),
         Ty::List => "\"l\"".to_string(),
+        Ty::Opt => "\"o\"".to_string(),
     };
     let fields = |s: &[(&str, Ty)]| s.iter().map(|(n, t)| format!("[\"{}\",{}]", n, ty(t))).collect::<Vec<_>>().join(",");
     let kinds = PATS.iter().map(|p| format!("\"{}\":[{}]", p.name, fields(p.schema))).collect::<Vec<_>>().join(",");

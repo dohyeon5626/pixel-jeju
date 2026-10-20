@@ -39,20 +39,41 @@ pub const VOFF: f64 = 60.0;
 
 // ── 이름표: JS가 처음에 받아 가서 번호 ↔ 이름을 바꿈 ──────────
 pub const FX_KINDS: [&str; 12] = ["px", "chunk", "puff", "spark", "ring", "flare", "smoke", "ember", "trail", "streak", "rain", "petal"];
-pub const SFX: [&str; 33] = [
+pub const SFX: [&str; 38] = [
     "crack", "rise", "hop", "shatter", "gallop", "tink", "boom", "hit", "splat", "throw", "chirp", "thud", "whoosh", "caw", "oink", "honk",
     "gull", "pop", "burst", "letter", "stab", "splash", "wave", "zap", "thunder", "gust", "alarm", "buzz", "erupt", "neigh", "roll",
-    "rumble", "shutter",
+    "rumble", "shutter", "jump", "djump", "dodge", "empty", "land",
 ];
 pub const REWARDS: [&str; 4] = ["stompKill", "shotKill", "shatter", "bigShatter"];
 pub const PALS: [&str; 10] = ["soil", "stone", "yel", "org", "red", "teal", "leaf", "cloth", "wood", "skin"];
 // JS 쪽 일 (글자 · 새 객체 · 사운드 덕킹처럼 Rust가 못 하는 것): 부르기 전에 JS가 지금 장애물 객체를 최신 값으로 맞춰 둠
 //  daily(글) · popup(글, x, y, 색) · tang(x, y, vx, vy) · splash(x, 크기) · glyphs(x, y) · split() · kick(dx, dy) · duck(t) · mean(x, y)
 //  label(x, y, 색) · flash(t, 색) · bolt() · ripple(x, dir) · gset(G 필드, 값) · beatLead(d) → 초
-pub const HOOKS: [&str; 15] =
-    ["daily", "popup", "tang", "splash", "glyphs", "split", "kick", "duck", "mean", "label", "flash", "bolt", "ripple", "gset", "beatLead"];
+//  숨비: pghost(x, y, 수명, 색) 잔상 · beatAct(x, y, 점수) → 박자 맞음 · throwShot() 귤 · poundKills() 충격파 · scarf() 목도리
+pub const HOOKS: [&str; 20] = [
+    "daily",
+    "popup",
+    "tang",
+    "splash",
+    "glyphs",
+    "split",
+    "kick",
+    "duck",
+    "mean",
+    "label",
+    "flash",
+    "bolt",
+    "ripple",
+    "gset",
+    "beatLead",
+    "pghost",
+    "beatAct",
+    "throwShot",
+    "poundKills",
+    "scarf",
+];
 // hook에 넘기는 글 · 팔레트에 없는 CSS 색 · gset으로 고치는 G 필드
-pub const STRS: [&str; 11] = ["bee", "+귤", "격파", "×", "+♥", "방패", "귤+5", "점수×2", "귤자석", "삼다수", "+1"];
+pub const STRS: [&str; 12] = ["bee", "+귤", "격파", "×", "+♥", "방패", "귤+5", "점수×2", "귤자석", "삼다수", "+1", "귤 없음"];
 pub const CSS: [&str; 10] = [
     "rgba(255,244,224,0.45)",
     "rgba(255,244,224,0.5)",
@@ -65,7 +86,7 @@ pub const CSS: [&str; 10] = [
     "rgba(165,180,215,0.35)",
     "rgba(225,232,245,0.4)",
 ];
-pub const GFIELDS: [&str; 6] = ["windTarget", "storm", "stormHold", "stormDir", "lightning", "dark"];
+pub const GFIELDS: [&str; 8] = ["windTarget", "storm", "stormHold", "stormDir", "lightning", "dark", "ammo", "slow"];
 pub fn idx(list: &[&str], k: &str) -> f64 {
     list.iter().position(|x| *x == k).expect("이름표에 없음") as f64
 }
@@ -92,7 +113,7 @@ pub fn pc(pal: &str, i: usize) -> f64 {
 
 // ── 지금 판의 값 (JS가 부르기 전에 CTX_BUF에 씀) ──
 //  화면 폭 · 숨비 자리 · 숨비 죽음 · 경기장 양 끝 · 속도 배율 · 귤자석 남은 시간 · 음악 템포(없으면 0) · 단계 · 먹구름 · 번개 · 화면 시간(amb.t)
-//  · 난이도(G.diff) · 지금 패턴 수 · 동굴 같은 실내 테마 · 정전 어둠(G.dark)
+//  · 난이도(G.diff) · 지금 패턴 수 · 동굴 같은 실내 테마 · 정전 어둠(G.dark) · 남은 귤(G.ammo) · 느려짐(G.slow)
 pub struct Ctx {
     pub w: f64,
     pub px: f64,
@@ -111,9 +132,11 @@ pub struct Ctx {
     pub npat: f64,
     pub indoor: bool,
     pub dark: f64,
+    pub ammo: f64,
+    pub slow: f64,
 }
-pub const CTX_LEN: usize = 17;
-static mut CTX_BUF: [f64; CTX_LEN] = [426.0, 0.0, 0.0, 0.0, 0.0, 426.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+pub const CTX_LEN: usize = 19;
+static mut CTX_BUF: [f64; CTX_LEN] = [426.0, 0.0, 0.0, 0.0, 0.0, 426.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
 pub fn ctx_buf() -> *mut f64 {
     unsafe { std::ptr::addr_of_mut!(CTX_BUF) as *mut f64 }
 }
@@ -137,6 +160,8 @@ pub fn ctx() -> Ctx {
         npat: b[14],
         indoor: b[15] != 0.0,
         dark: b[16],
+        ammo: b[17],
+        slow: b[18],
     }
 }
 
@@ -307,11 +332,13 @@ pub const EV_BOUNCE: i32 = 2;
 
 // ── 장애물 필드 ───────────────────────────────────────────────
 // 필드 종류: 숫자 · 참거짓 · 이름(단계 같은 문자열, 목록 안 번호로 주고받음) · 목록(그리기용 숫자 배열, 읽기만 — draw::list로 꺼냄)
+//  · 없앨 수 있는 숫자(Opt: NaN이면 undefined로 되씀 — Num은 NaN이면 그대로 둠)
 pub enum Ty {
     Num,
     Bool,
     Enum(&'static [&'static str]),
     List,
+    Opt,
 }
 pub type Schema = &'static [(&'static str, Ty)];
 // 판정 상자 (x · y · w · h)
@@ -326,6 +353,7 @@ pub fn tables_json(kinds: &[(&str, Schema, Schema)]) -> String {
         Ty::Bool => "\"b\"".to_string(),
         Ty::Enum(v) => list(v),
         Ty::List => "\"l\"".to_string(),
+        Ty::Opt => "\"o\"".to_string(),
     };
     let fields = |s: &[&(&str, Ty)]| s.iter().map(|(n, t)| format!("[\"{}\",{}]", n, ty(t))).collect::<Vec<_>>().join(",");
     let map = |with_draw: bool| {

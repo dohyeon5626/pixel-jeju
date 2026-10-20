@@ -79,19 +79,10 @@ pub unsafe extern "C" fn fx_step(b: *mut f64, n: usize, dt: f64, t: f64) {
     fx::step(from_raw_parts_mut(b, n * 8), dt, t);
 }
 
-// 숨비: 걷기는 새 vx를 돌려주고, 낙하는 PLAYER 칸(12개)을 고쳐 씀
-static mut PLAYER: [f64; 12] = [0.0; 12];
+// 숨비 한 스텝: f는 숨비 필드 목록대로 (제자리에서 고침) · input 비트 (player.rs IN_*) · 걷기 강화 · 바람 · 양옆 벽
 #[no_mangle]
-pub extern "C" fn player_buf() -> *mut f64 {
-    unsafe { std::ptr::addr_of_mut!(PLAYER) as *mut f64 }
-}
-#[no_mangle]
-pub extern "C" fn player_walk(vx: f64, dir: f64, on_ground: i32, speed_up: f64, dt: f64) -> f64 {
-    player::walk(vx, dir, on_ground != 0, speed_up, dt)
-}
-#[no_mangle]
-pub unsafe extern "C" fn player_fall() {
-    player::fall(&mut *std::ptr::addr_of_mut!(PLAYER));
+pub unsafe extern "C" fn player_update(f: *mut f64, n: usize, dt: f64, input: u32, up_speed: f64, wind: f64, al: f64, ar: f64) {
+    player::update(from_raw_parts_mut(f, n), dt, input, up_speed, wind, al, ar)
 }
 
 // 글자: a는 알파 (w × h) · cols는 RGB 묶음 · bb는 경계 상자 4칸

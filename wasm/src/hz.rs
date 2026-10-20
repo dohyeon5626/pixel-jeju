@@ -98,5 +98,13 @@ pub fn tables_json() -> String {
     let kinds: Vec<(&str, Schema, Schema)> = KINDS.iter().map(|k| (k.name, k.schema, k.dschema)).collect();
     let mut s = crate::game::tables_json(&kinds);
     s.insert_str(s.len() - 1, &format!(",\"events\":[{}]", EVENTS.iter().map(|e| format!("\"{}\"", e)).collect::<Vec<_>>().join(",")));
+    // 숨비 필드 목록 (player.rs)
+    let ty = |t: &crate::game::Ty| match t {
+        crate::game::Ty::Bool => "b",
+        crate::game::Ty::Opt => "o",
+        _ => "n",
+    };
+    let player = crate::player::SCHEMA.iter().map(|(n, t)| format!("[\"{}\",\"{}\"]", n, ty(t))).collect::<Vec<_>>().join(",");
+    s.insert_str(s.len() - 1, &format!(",\"player\":[{}]", player));
     s
 }

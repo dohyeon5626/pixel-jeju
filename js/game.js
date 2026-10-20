@@ -1613,121 +1613,7 @@ function finishPattern(p) {
 // ═════════════════════════════════════════════════════════════
 function playerBox() { return P.rollT > 0 || P.flipT > 0 || P.pound ? { x: P.x - 6, y: P.y - 13, w: 12, h: 12 } : { x: P.x - 4, y: P.y - 24, w: 8, h: 23 }; }
 
-function updatePlayer(dt) {
-  P.prevY = P.y;
-  if (P.dead) { P.vy += GRAV * dt; P.x += P.vx * dt; P.y += P.vy * dt; P.spin += dt * 14; return; }
-  const ctrl = !G.cut && !G.choice;
-  P.inv = Math.max(0, P.inv - dt); P.hurtT = Math.max(0, P.hurtT - dt); P.rollCD -= dt; P.throwCD -= dt; P.throwT -= dt; P.flipT -= dt; P.landT -= dt; P.skidT -= dt;
-  P.blinkT -= dt; if (P.blinkT < -0.12) P.blinkT = rand(1.5, 4);
-  P.confuseT = Math.max(0, (P.confuseT || 0) - dt);
-  const dir = (ctrl ? (held.right ? 1 : 0) - (held.left ? 1 : 0) : 0) * (P.confuseT > 0 ? -1 : 1);   // 사투리 혼란: 좌우 반전
-  if (pressed.jump) { P.buffer = BUFFER; pressed.jump = false; } else P.buffer -= dt;
-  // 쿨다운 끝나기 직전(0.3초 안)에 누른 구르기 · 던지기는 버리지 않고 풀리는 순간 나감
-  const rollBuf = () => Math.max(BUFFER, Math.min(0.3, (P.rollT > 0 ? P.rollT + ROLL_CD : 0) + Math.max(0, P.rollCD) + 0.05));
-  if (pressed.roll) { P.rollBuf = rollBuf(); pressed.roll = false; } else P.rollBuf = (P.rollBuf || 0) - dt;
-  // ↓/S: 공중이면 내려찍기, 땅이면 구르기
-  if (pressed.down) { pressed.down = false; if (!P.onGround && GROUND - P.y > 20) P.poundBuf = BUFFER; else P.rollBuf = rollBuf(); } else P.poundBuf = (P.poundBuf || 0) - dt;
-  if (pressed.throw) { P.throwBuf = Math.max(BUFFER, Math.min(0.3, Math.max(0, P.throwCD, P.rollT) + 0.05)); pressed.throw = false; } else P.throwBuf = (P.throwBuf || 0) - dt;
-  if (held.throw && ctrl) P.throwBuf = Math.max(P.throwBuf, 0.02);
-  if (!ctrl) { P.buffer = 0; P.rollBuf = 0; P.throwBuf = 0; }
-  P.coyote = P.onGround ? COYOTE : P.coyote - dt;
-
-  if (P.flipT > 0) { P.ghostT -= dt; if (P.ghostT <= 0) { G.ghosts.push({ img: curFrame(), x: P.x, y: P.y, life: 0.18, col: P.airJumps === 0 && P.flipMax - P.flipT < 0.12 ? C.yel[3] : C.cloth[2] }); P.ghostT = 0.05; } }
-  if (P.hurtT > 0) P.vx = approach(P.vx, 0, 200 * dt);
-  else if (P.rollT > 0) {
-    P.rollT -= dt;
-    P.vx = P.face * ROLL_V * (0.5 + 0.5 * (P.rollT / ROLL_T));
-    P.ghostT -= dt; if (P.ghostT <= 0) { G.ghosts.push({ img: curFrame(), x: P.x, y: P.y, life: 0.22, col: C.org[3] }); P.ghostT = 0.035; }
-    P.dustT -= dt; if (P.onGround && P.dustT <= 0) { dust(P.x - P.face * 5, GROUND, 1, -P.face); P.dustT = 0.04; }
-    if (P.rollT <= 0) endRoll(ROLL_CD);
-  } else {
-    if (dir) {
-      if (P.onGround && Math.sign(P.vx) === -dir && Math.abs(P.vx) > 50) { P.skidT = 0.12; if (Math.random() < 0.5) dust(P.x + dir * 4, GROUND, 1, dir); }
-      P.vx = WK.walk(P.vx, dir, P.onGround, G.up.speed || 0, dt); P.face = dir;   // 가속 · 마찰은 wasm/src/player.rs
-    } else P.vx = WK.walk(P.vx, 0, P.onGround, 0, dt);
-  }
-
-  if (P.poundBuf > 0 && P.hurtT <= 0 && !P.pound && !P.onGround) {
-    // 내려찍기: 곧장 내리꽂혀 착지 충격파로 주변 하르방 · 썩은 귤을 부숨
-    P.poundBuf = 0; P.pound = true; P.flipT = 0; P.rollT = 0; P.vx = 0; P.vy = 0; P.poundT = 0.08;
-    Sound.sfx.whoosh(); P.sx = 0.8; P.sy = 1.25; fx({ x: P.x, y: P.y - 12, kind: 'flare', size: 7, life: 0.15, col: C.yel[3] });
-  }
-  if (P.rollBuf > 0) {
-    if (P.hurtT <= 0 && P.rollT <= 0 && P.rollCD <= 0 && !P.pound) {
-      P.rollBuf = 0;
-      if (dir) P.face = dir;
-      P.rollT = ROLL_T; P.flipT = 0;
-      if (onBeatAct(P.x, P.y - 8, false)) { G.slow = Math.max(G.slow, 0.08); for (let k = 1; k <= 3; k++) G.ghosts.push({ img: curFrame(), x: P.x - P.face * k * 5, y: P.y, life: 0.2, col: C.teal[3] }); }   // 박자 구르기
-      if (!P.onGround) P.vy = Math.min(P.vy, 0) * 0.3;
-      Sound.sfx.roll(); dust(P.x, GROUND, 4, -P.face);
-      P.sx = 1.25; P.sy = 0.8;
-    }
-  }
-  if (P.buffer > 0 && P.hurtT <= 0) {
-    if (P.coyote > 0) {
-      P.vy = -JUMP_V; P.onGround = false; P.coyote = 0; P.buffer = 0; P.jumpCut = false;
-      if (P.rollT > 0) { endRoll(ROLL_CD * 0.4); P.vx = P.face * SPEED * 1.25; }
-      P.sx = 0.75; P.sy = 1.3; Sound.sfx.jump(); dust(P.x - 3, GROUND, 3, -1); dust(P.x + 3, GROUND, 3, 1); onBeatAct(P.x, GROUND - 4, false);
-      fx({ x: P.x, y: GROUND - 1, kind: 'ring', life: 0.22, col: C.cloth[2] });
-      for (const s of [-1, 1]) fx({ x: P.x + s * 5, y: GROUND - 3, vx: s * 10, vy: -70, life: 0.14, kind: 'trail', col: C.cloth[2] });
-    } else if (P.airJumps > 0) {
-      P.airJumps--;
-      const third = P.airJumps === 0;
-      P.vy = third ? -DJUMP_V * 0.92 : -DJUMP_V; P.buffer = 0; P.jumpCut = false; P.flipT = third ? 0.42 : 0.32; P.flipMax = P.flipT;
-      if (P.rollT > 0) endRoll(ROLL_CD * 0.6);
-      P.sx = 0.8; P.sy = 1.25; Sound.sfx.djump();
-      fx({ x: P.x, y: P.y - 2, kind: 'ring', life: 0.25, col: third ? C.yel[3] : C.cloth[3] });
-      fx({ x: P.x, y: P.y - 4, kind: 'flare', size: third ? 9 : 5, life: 0.18, col: third ? C.yel[3] : C.cloth[3] });
-      for (let i = -2; i <= 2; i++) fx({ x: P.x + i * 2, y: P.y, vx: i * 25, vy: 90, life: 0.2, kind: 'trail', col: third ? C.yel[2] : C.cloth[2] });
-      if (third) { Sound.sfx.dodge(); light(P.x, P.y - 10, 26, C.yel[3], 0.8); for (let i = 0; i < 8; i++) fx({ x: P.x + rand(-8, 8), y: P.y - rand(0, 16), vx: rand(-30, 30), vy: rand(-40, 10), life: 0.4, kind: 'spark' }); }
-      for (let i = 0; i < 6; i++) fx({ x: P.x + rand(-6, 6), y: P.y, vx: rand(-40, 40), vy: rand(20, 60), life: 0.3, kind: 'puff', size: 1 });
-    }
-  }
-  if (!held.jump && P.vy < 0 && !P.jumpCut) { P.vy *= JUMP_CUT; P.jumpCut = true; }
-
-  if (P.throwBuf > 0) {
-    if (P.throwCD <= 0 && P.hurtT <= 0 && P.rollT <= 0) {
-      P.throwBuf = 0;
-      if (G.ammo > 0) {
-        G.ammo--; P.throwCD = THROW_CD; P.throwT = 0.2;
-        G.shots.push(new Shot(P.x + P.face * 7, P.y - 18, P.face));
-        Sound.sfx.throw(); P.sx = 1.12; P.sy = 0.92;
-        fx({ x: P.x + P.face * 9, y: P.y - 18, kind: 'flare', size: 4, life: 0.1, col: C.org[3] }); fx({ x: P.x + P.face * 8, y: P.y - 18, vx: P.face * 20, vy: -10, life: 0.2, kind: 'puff', size: 0 });
-      } else { Sound.sfx.empty(); popup('귤 없음', P.x, P.y - 34, C.org[3]); P.throwCD = 0.4; }
-    }
-  }
-
-  P.poundSafe = Math.max(0, (P.poundSafe || 0) - dt);
-  if (P.pound) {
-    P.vx = 0; P.poundT -= dt;
-    if (P.poundT > 0) P.vy = 0; else P.vy = 620;
-    P.ghostT2 = (P.ghostT2 || 0) - dt; if (P.ghostT2 <= 0 && P.poundT <= 0) { P.ghostT2 = 0.03; G.ghosts.push({ img: curFrame(), x: P.x, y: P.y, life: 0.16, col: C.yel[3] }); }
-  }
-  WK.fall(P, dt, G.wind, G.arenaL || 8 + EDGE, G.arenaR, held.jump);   // 중력 · 바람 · 양옆 벽 · 부드러운 천장 (wasm/src/player.rs)
-  if (!P.onGround) P.peakY = Math.min(P.peakY ?? P.y, P.y);
-
-  if (P.y >= GROUND) {
-    if (!P.onGround && P.pound) poundLand();
-    if (!P.onGround) {
-      const hard = P.vy > 220;
-      dust(P.x - 4, GROUND, hard ? 4 : 2, -1); dust(P.x + 4, GROUND, hard ? 4 : 2, 1);
-      if (P.vy > 150) Sound.sfx.land();
-      P.flipT = 0; P.landT = hard ? 0.1 : 0.05;
-      const fall = GROUND - (P.peakY ?? GROUND); P.peakY = undefined;
-      if (fall > 150) { light(P.x, GROUND - 4, 22, C.yel[3], 0.6); fx({ x: P.x, y: GROUND - 1, kind: 'ring', life: 0.3, col: C.yel[3] }); }
-      if (fall > 110) { fx({ x: P.x, y: GROUND - 1, kind: 'ring', big: true, life: 0.25, col: C.cloth[2] }); shake(0.08); for (let i = 0; i < 6; i++) fx({ x: P.x, y: GROUND - 1, vx: rand(-90, 90), vy: rand(-60, -20), grav: 300, life: rand(0.25, 0.4), kind: 'chunk', size: 1, col: C.soil[3] }); }
-    }
-    P.y = GROUND; P.vy = 0; P.onGround = true; P.airJumps = AIR_JUMPS;
-  } else P.onGround = false;
-
-  if (P.onGround && Math.abs(P.vx) > 10 && P.rollT <= 0) {
-    P.anim += dt * (Math.abs(P.vx) / SPEED) * 15;
-    P.dustT -= dt; if (P.dustT <= 0) { dust(P.x - P.face * 5, GROUND, 1, -P.face); P.dustT = 0.16; }
-  } else if (P.rollT <= 0) P.anim = 0;
-
-  P.sx = approach(P.sx, 1, dt * 5); P.sy = approach(P.sy, 1, dt * 5);
-  updateScarf();
-}
+function updatePlayer(dt) { WK.playerUpdate(P, dt, G.up.speed || 0, G.wind, G.arenaL || 8 + EDGE, G.arenaR); }   // 입력 · 구르기 · 점프 · 던지기 · 내려찍기 · 착지는 wasm/src/player.rs
 
 function clearInputs() {
   for (const k of GAME_KEYS) pressed[k] = false;
@@ -1736,18 +1622,12 @@ function clearInputs() {
 }
 function rollInv() { return P.rollT > ROLL_T - 0.24 || (P.pound && P.poundT <= 0) || (P.poundSafe || 0) > 0; }
 // 내려찍기 착지: 충격파 · 화면 울림 · 근처의 밟을 수 있는 것들을 한꺼번에 부숨
-function poundLand() {
-  P.pound = false; P.poundSafe = 0.12; P.rollCD = ROLL_CD; P.landT = 0.16; P.sx = 1.35; P.sy = 0.7;
-  Sound.sfx.boom(); Sound.duck(0.3); shake(0.2); kick(0, 3); hitstop(0.065);
-  fx({ x: P.x, y: GROUND - 1, kind: 'ring', big: true, life: 0.35, col: C.yel[3] }); fx({ x: P.x, y: GROUND - 1, kind: 'ring', life: 0.25, col: '#fff4e0' });
-  dust(P.x - 6, GROUND, 5, -1, 2); dust(P.x + 6, GROUND, 5, 1, 2); light(P.x, GROUND - 6, 34, C.yel[3], 0.9);
-  for (const sd of [-1, 1]) for (let i = 0; i < 4; i++) fx({ x: P.x + sd * (6 + i * 6), y: GROUND - 2, vx: sd * rand(30, 70), vy: -rand(60, 140), grav: 420, life: rand(0.3, 0.5), kind: 'chunk', size: randi(1, 2), col: pick([C.soil[3], C.stone[3]]) });
-  onBeatAct(P.x, GROUND - 4);
+// 내려찍기 충격파로 주변 하르방 · 썩은 귤을 부숨 (wasm/src/player.rs가 착지 순간 부름)
+function poundKills() {
   let n = 0;
   for (const h of G.hz) { if (h.dead || !h.stompable || !h.kill) continue; const bs = h.boxes(); if (bs.some(b => Math.abs(b.x + b.w / 2 - P.x) < 46 + 16 * (G.up.pound || 0) && b.y + b.h > GROUND - 30)) { h.kill('stomp'); n++; G.stomps++; daily('stomp'); } }
   if (n > 1) addScore(80 * n, P.x, P.y - 44);   // 여럿을 한 번에: 충격파 보너스 (처치마다 보상 · 콤보는 처치 쪽에서)
 }
-function endRoll(cd) { P.rollT = 0; P.rollCD = cd; P.rollCDMax = cd; }
 
 function curFrame() {
   const side = P.face > 0 ? 'r' : 'l';
