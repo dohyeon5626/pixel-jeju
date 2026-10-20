@@ -294,9 +294,13 @@ function cjFar(ph) {   // 먼 숲 언덕 (연무에 묻힌 둥근 능선)
 function basaltWall(c, maskPts, x0, x1, yTop, yBot, seed, opt = {}) {
   // 현무암 주상절리 (픽셀마다): 기둥이 살짝 휘고 · 폭이 제각각 · 빛 받는 면 → 그늘 면으로 부드럽게 꺾임 · 마디는 기울고 굽음 · 모서리는 풍화돼 둥글게 · 꼭대기 높이 들쭉날쭉
   const w = c.width, h = c.height, m = mkR(w, h), mx = m.getContext('2d'); P_.poly(mx, maskPts, '#fff');
-  const md = mx.getImageData(0, 0, w, h).data, x = c.getContext('2d'), id = x.getImageData(0, 0, w, h), d = id.data, R = rng(seed);
-  const ramp = (opt.ramp || ['#18171a', '#25232a', '#34313a', '#46424a', '#5c5760', '#76707a', '#928c92']).map(rgb);
-  const wx = opt.warp || (i => i), wx0 = Math.floor(Math.min(wx(x0), wx(x1))), wx1 = Math.ceil(Math.max(wx(x0), wx(x1)));   // warp: 휘어 들어간 벽 (옆으로 돌아간 면은 기둥이 좁아 보임)
+  const md = mx.getImageData(0, 0, w, h).data, x = c.getContext('2d'), id = x.getImageData(0, 0, w, h), d = id.data;
+  const ramp = opt.ramp || ['#18171a', '#25232a', '#34313a', '#46424a', '#5c5760', '#76707a', '#928c92'], wx = opt.warp || (i => i), mc = opt.mossCols || ['#3a6430', '#4e7c3a'];   /* mossCols: 시간대 색을 입힌 이끼 */
+  if (!(WK && WK.basaltWall(md, d, w, h, x0, x1, yTop, yBot, seed, wx, ramp, opt.rag ?? 7, opt.moss || 0, mc))) basaltWallPx(md, d, w, h, x0, x1, yTop, yBot, seed, opt, ramp.map(rgb), wx, mc);
+  x.putImageData(id, 0, 0);
+}
+function basaltWallPx(md, d, w, h, x0, x1, yTop, yBot, seed, opt, ramp, wx, mc) {   // 픽셀 (WASM: wasm/src/basalt.rs)
+  const R = rng(seed), wx0 = Math.floor(Math.min(wx(x0), wx(x1))), wx1 = Math.ceil(Math.max(wx(x0), wx(x1)));   // warp: 휘어 들어간 벽 (옆으로 돌아간 면은 기둥이 좁아 보임)
   const cols = []; for (let i = wx0 - 30; i < wx1 + 30;) { const cw = 6 + Math.floor(R() * 10); cols.push({ x: i, w: cw, ridge: 0.3 + R() * 0.35, tone: (R() - 0.5) * 0.1, seg: Array.from({ length: 14 }, () => 8 + R() * 18), off: R() * 20, slant: (R() - 0.5) * 5, topOff: Math.floor(R() * (opt.rag ?? 7)) }); i += cw; }
   const topY = new Int16Array(w).fill(9999); for (let i = 0; i < w; i++) for (let y = 0; y < h; y++) if (md[(y * w + i) * 4 + 3] > 127) { topY[i] = y; break; }
   for (let y = 0; y < h; y++) for (let i = x0; i < x1; i++) {
@@ -315,11 +319,10 @@ function basaltWall(c, maskPts, x0, x1, yTop, yBot, seed, opt = {}) {
     else if (edgeS < 0.9) v = 0.12;                                                                // 마디 금
     else { const cr = Math.hypot(Math.max(0, 2.5 - edgeU * col.w), Math.max(0, 2.5 - edgeS)); if (cr > 0) v -= cr * 0.07; if (segT < 0.2 && u < rr) v += 0.08; }   // 모서리 풍화(둥글게 어두움) · 마디 아래 빛
     if (hash2(col.x, si, seed + 3) < 0.06) v -= 0.18;
-    if (opt.moss && vnoise(i * 0.09, y * 0.035, seed + 4) > opt.moss && hash2(i >> 1, y >> 1, seed + 9) < 0.8) { const mc = opt.mossCols || ['#3a6430', '#4e7c3a'], g2 = rgb(hash2(i, y, seed + 5) < 0.5 ? mc[0] : mc[1]);   /* mossCols: 시간대 색을 입힌 이끼 */ d[p] = g2[0]; d[p + 1] = g2[1]; d[p + 2] = g2[2]; d[p + 3] = 255; continue; }
+    if (opt.moss && vnoise(i * 0.09, y * 0.035, seed + 4) > opt.moss && hash2(i >> 1, y >> 1, seed + 9) < 0.8) { const g2 = rgb(hash2(i, y, seed + 5) < 0.5 ? mc[0] : mc[1]); d[p] = g2[0]; d[p + 1] = g2[1]; d[p + 2] = g2[2]; d[p + 3] = 255; continue; }
     const k = clamp(v, 0, 0.999) * (ramp.length - 1), a = Math.floor(k), t = k - a, c0 = ramp[a], c1 = ramp[Math.min(ramp.length - 1, a + 1)], mixv = t > 0.66 ? 1 : t > 0.33 ? (hash2(i >> 1, y, seed + 6) < 0.5 ? 1 : 0) : 0;
     d[p] = mixv ? c1[0] : c0[0]; d[p + 1] = mixv ? c1[1] : c0[1]; d[p + 2] = mixv ? c1[2] : c0[2]; d[p + 3] = 255;
   }
-  x.putImageData(id, 0, 0);
 }
 function overlay(base, top) { base.getContext('2d').drawImage(top, 0, 0); return base; }
 
