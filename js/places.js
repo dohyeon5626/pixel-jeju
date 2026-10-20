@@ -332,11 +332,12 @@ function overlay(base, top) { base.getContext('2d').drawImage(top, 0, 0); return
 // ═════════════════════════════════════════════════════════════
 // 픽셀 수관: 작은 잎 덩이 여러 개가 겹침 — 덩이마다 구 음영 · 아랫단 그늘 테로 덩이가 갈라져 보임 · 잎 끝이 삐죽한 윤곽 · 반짝이는 잎 점
 function pixTree(x, cx, cy, r, ramp, R, opt = {}) {
-  const fl = opt.flat || 0.82, size = Math.ceil(r * 2.8) + 8, pb = new PB(size, size), c0 = size / 2, n = opt.blobs || Math.max(5, Math.round(r * 0.9));
+  const fl = opt.flat || 0.82, size = Math.ceil(r * 2.8) + 8, c0 = size / 2, n = opt.blobs || Math.max(5, Math.round(r * 0.9));
   const blobs = [[c0, c0 - r * 0.08, r * 0.58]];
   for (let k = 0; k < n; k++) { const a = R() * 6.283, d = Math.sqrt(R()) * r * (opt.spread || 0.6); blobs.push([c0 + Math.cos(a) * d, c0 + Math.sin(a) * d * fl, r * (0.32 + R() * 0.26)]); }
   blobs.sort((p, q) => p[1] - q[1]);
-  for (const [bx, by, br] of blobs) for (let yy = Math.floor(by - br - 1); yy <= Math.ceil(by + br + 1); yy++) for (let xx = Math.floor(bx - br - 1); xx <= Math.ceil(bx + br + 1); xx++) {
+  const img = WK && WK.treeImg(size, blobs, cx, cy, r, fl, ramp), pb = img ? null : new PB(size, size);   // WASM: 색까지 칠한 캔버스로 받음
+  if (!img) for (const [bx, by, br] of blobs) for (let yy = Math.floor(by - br - 1); yy <= Math.ceil(by + br + 1); yy++) for (let xx = Math.floor(bx - br - 1); xx <= Math.ceil(bx + br + 1); xx++) {
     const nx = (xx + 0.5 - bx) / br, ny = (yy + 0.5 - by) / (br * fl), dd = nx * nx + ny * ny;
     if (dd > 1 + (hash2(xx + Math.round(cx) * 7, yy + Math.round(cy) * 3, 71) - 0.5) * 0.4) continue;
     let v = sphereLight(clamp(nx, -1, 1), clamp(ny, -1, 1)) * 0.7 + (0.5 - (xx - c0) / r * 0.2 - (yy - c0) / r * 0.3) * 0.3;
@@ -345,8 +346,9 @@ function pixTree(x, cx, cy, r, ramp, R, opt = {}) {
     pb.set(xx, yy, ramp[clamp(Math.floor(v * ramp.length), 0, ramp.length - 1)]);
   }
   if (opt.trunk) { const [td, tl] = opt.trunk, th = opt.trunkH || r * 1.6, tw = Math.max(2, Math.round(r * 0.22)); px1(x, td, Math.round(cx - tw / 2), Math.round(cy + r * 0.3), tw, Math.round(th)); px1(x, tl, Math.round(cx - tw / 2), Math.round(cy + r * 0.3), 1, Math.round(th)); }
-  x.drawImage(pb.canvas(), Math.round(cx - c0), Math.round(cy - c0));
-  if (opt.flowers) for (let k = 0; k < r * 1.3; k++) { const a = R() * 6.283, d = Math.sqrt(R()) * r * 0.75, fx = Math.round(cx + Math.cos(a) * d), fy = Math.round(cy + Math.sin(a) * d * fl); if (pb.get(Math.round(fx - cx + c0), Math.round(fy - cy + c0))) { px1(x, opt.flowers[0], fx, fy, 2, 1); px1(x, opt.flowers[1], fx, fy); } }
+  x.drawImage(img ? img.c : pb.canvas(), Math.round(cx - c0), Math.round(cy - c0));
+  const leaf = (X, Y) => img ? X >= 0 && Y >= 0 && X < size && Y < size && img.a[(Y * size + X) * 4 + 3] : pb.get(X, Y);
+  if (opt.flowers) for (let k = 0; k < r * 1.3; k++) { const a = R() * 6.283, d = Math.sqrt(R()) * r * 0.75, fx = Math.round(cx + Math.cos(a) * d), fy = Math.round(cy + Math.sin(a) * d * fl); if (leaf(Math.round(fx - cx + c0), Math.round(fy - cy + c0))) { px1(x, opt.flowers[0], fx, fy, 2, 1); px1(x, opt.flowers[1], fx, fy); } }
 }
 // 픽셀 곰솔: 바닷바람에 굽은 줄기(아래는 굵게) · 옆으로 뻗은 가지 · 가지 끝 납작한 솔잎 덩이
 function pixPine(x, cx, base, h, ramp, trunk, R, lean) {
