@@ -1,4 +1,5 @@
 // 하늘 · 바다에서 오는 장애물 (원래 game.js): 말풍선 · 썩은 귤 · 던진 것 · 갈라지는 글자 · 갈매기 · 벌 · 참새 · 택배 · 글라이더 · 돌고래 · 까마귀/박쥐 · 떨어지는 사투리
+use crate::draw::*;
 use crate::game::*;
 use crate::js::*;
 
@@ -92,6 +93,20 @@ pub mod bubble {
         reward(if f[KIND] == K_BIG { "bigShatter" } else { "shatter" }, f[X] + f[W] / 2.0, f[Y] - 4.0);
         true
     }
+    pub const DRAW: Schema = &[];
+    pub fn draw(f: &mut [f64], d: &mut Draw) {
+        let pop = if f[AGE] < 0.12 { ease_back(f[AGE] / 0.12) } else { 1.0 };
+        let wob = round(sin(f[AGE] * 14.0) * 1.0);
+        if f[Y] + f[BODY_H] > GROUND - 30.0 {
+            d.shadow(f[X] + f[W] / 2.0, f[W] * 0.6);
+        }
+        let (x, y) = (round(f[X]), round(f[Y] + wob + (1.0 - pop) * 6.0));
+        if f[FLASH] > 0.0 {
+            d.img_sil(own(), hexc(0xffffff), x, y); // 맞은 순간 하얗게
+        } else {
+            d.img(own(), x, y);
+        }
+    }
 }
 
 // ── 썩은 귤: 통통 튀다 터짐 (감귤 따기에서는 곧게 떨어져 철퍽) ──
@@ -158,6 +173,14 @@ pub mod rotten {
         reward(if ev == EV_STOMP { "stompKill" } else { "shatter" }, f[X], f[Y] - 10.0);
         true
     }
+    pub const DRAW: Schema = &[];
+    pub fn draw(f: &mut [f64], d: &mut Draw) {
+        if f[LIFE] < 1.0 && odd(f[LIFE] * 10.0) {
+            return; // 사라지기 직전 깜빡
+        }
+        d.shadow(f[X], 7.0);
+        d.img(named("ROTTEN"), round(f[X] - 5.0), round(f[Y] - 10.0));
+    }
 }
 
 // ── 이벤트 초상이 던지는 것: 잠깐 조준선 → 날아감 ──
@@ -175,6 +198,8 @@ pub mod zap {
         ("metal", Ty::Bool),
         ("sprH", Ty::Num),
         ("dead", Ty::Bool),
+        ("ax", Ty::Num),
+        ("ay", Ty::Num),
     ];
     pub const X: usize = 0;
     pub const Y: usize = 1;
@@ -187,6 +212,8 @@ pub mod zap {
     const METAL: usize = 8;
     const SPR_H: usize = 9;
     pub const DEAD: usize = 10;
+    const AX: usize = 11;
+    const AY: usize = 12;
     pub fn update(f: &mut [f64], dt: f64) -> bool {
         f[T] += dt;
         if f[T] < f[AIM] {
@@ -223,6 +250,25 @@ pub mod zap {
         reward("shatter", f[X], f[Y] - 8.0);
         true
     }
+    pub const DRAW: Schema = &[];
+    // 조준하는 동안은 깜빡이는 점선 · 날아가면 그림 (왼쪽으로 가면 뒤집은 그림이 있으면 그것)
+    pub fn draw(f: &mut [f64], d: &mut Draw) {
+        if f[T] < f[AIM] {
+            if odd(f[T] * 16.0) {
+                return;
+            }
+            let m = hypot(f[VX], f[VY]);
+            let (ux, uy) = (f[VX] / m, f[VY] / m);
+            d.style(pc("red", 2));
+            for i in 1..16 {
+                let i = i as f64;
+                d.rect(round(f[AX] + ux * i * 10.0), round(f[AY] + uy * i * 10.0), 2.0, 2.0);
+            }
+            return;
+        }
+        let spr = if f[VX] < 0.0 && own().has_flip() { own().at(FLIP) } else { own() };
+        d.img(spr, round(f[X] - spr.w() / 2.0), round(f[Y] - spr.h() / 2.0));
+    }
 }
 
 // ── 사투리 낱말: 날아가다 뜻풀이 글자로 갈라짐 (갈라진 글자는 JS split이 던짐) ──
@@ -241,9 +287,11 @@ pub mod split_zap {
         ("metal", Ty::Bool),
         ("sprH", Ty::Num),
         ("dead", Ty::Bool),
+        ("ax", Ty::Num),
+        ("ay", Ty::Num),
         ("splitT", Ty::Num),
     ];
-    const SPLIT_T: usize = 11;
+    const SPLIT_T: usize = 13;
     pub fn update(f: &mut [f64], dt: f64) -> bool {
         if !zap::update(f, dt) {
             return false;
@@ -322,6 +370,38 @@ pub mod gull {
         reward("shatter", f[X], f[Y] - 10.0);
         true
     }
+    pub const DRAW: Schema = &[];
+    // 내리꽂을 길 미리보기 · 땅의 그림자
+    pub fn decal(f: &mut [f64], d: &mut Draw) {
+        let k = max(0.0, f[T]) / f[DUR];
+        if k < 0.45 {
+            d.alpha(1.0 - k / 0.45);
+            let mut s = max(0.08, k);
+            while s < 0.92 {
+                let x = round(lerp(f[SX], f[TX] + f[DIR] * 190.0, s));
+                let y = round(f[SY] + (GROUND - 10.0 - f[SY]) * (1.0 - pow(2.0 * s - 1.0, 2.0)));
+                if y >= -VOFF + 30.0 {
+                    d.style(INK);
+                    d.rect(x - 1.0, y - 1.0, 3.0, 3.0);
+                    d.style(pc("red", 3));
+                    d.rect(x, y, 1.0, 1.0);
+                }
+                s += 0.04;
+            }
+            d.alpha(1.0);
+        }
+        if k < 0.7 {
+            let a = 0.15 + min(1.0, k / 0.4) * 0.3;
+            d.rgba(30.0, 20.0, 40.0, a);
+            d.rect(round(f[TX] - 40.0), GROUND, 80.0, 1.0);
+            d.rgba(200.0, 40.0, 40.0, a);
+            d.rect(round(f[TX] - 6.0), GROUND, 12.0, 1.0);
+        }
+    }
+    pub fn draw(f: &mut [f64], d: &mut Draw) {
+        let fr = named("GULL").at([0.0, 0.0, 1.0, 1.0, 1.0, 0.0][(f[ANIM].floor() % 6.0) as usize]).side(f[DIR] > 0.0);
+        d.img(fr, round(f[X] - fr.ax()), round(f[Y] - fr.ay()));
+    }
 }
 
 // ── 유채꽃 벌떼: 모두 같은 물결길을 따라 날아옴 ──
@@ -353,6 +433,11 @@ pub mod bee {
         reward("shatter", f[X], f[Y] - 8.0);
         sfx("tink");
         true
+    }
+    pub const DRAW: Schema = &[];
+    pub fn draw(f: &mut [f64], d: &mut Draw) {
+        let fr = named("BEE").at((f[T] * 18.0).floor() % 2.0).side(f[DIR] > 0.0);
+        d.img(fr, round(f[X] - fr.ax()), round(f[Y] - fr.ay()));
     }
 }
 
@@ -412,6 +497,54 @@ pub mod plane {
         burst(sx, sy, 6.0, &[hexc(0x8a5a3a), hexc(0xb4865c), hexc(0xe6dac2)], 50.0, 0.5, 80.0, "chunk");
         reward("shatter", f[X], f[Y] - 8.0);
         true
+    }
+    // 그리기 전용: 참새마다 [자리 ox · oy, 날갯짓 위상]
+    pub const DRAW: Schema = &[("birds", Ty::List)];
+    const BIRDS: usize = SCHEMA.len();
+    // 참새 무리 (sil: 예고용 붉은 그림자 · x: 그릴 자리)
+    fn birds(f: &[f64], d: &mut Draw, sil: bool, x: f64) {
+        let set = named("SPARROW").side(f[DIR] > 0.0);
+        let flee = f[FLEE] != 0.0;
+        for b in list(f, BIRDS).chunks(3) {
+            let (ox, oy, ph) = (b[0], b[1], b[2]);
+            let fr = set.at((f[T] * 14.0 + ph * 3.0).floor() % 4.0);
+            let bob = round(sin(f[T] * 7.0 + ph) * 1.2) + if flee { -round(ox * 0.4) } else { 0.0 };
+            let (px, py) = (round(x + ox * f[DIR] - fr.ax()), round(f[Y] + oy + bob - fr.ay()));
+            if sil {
+                d.img_sil(fr, pc("red", 2), px, py);
+            } else {
+                d.img(fr, px, py);
+            }
+        }
+    }
+    pub fn draw(f: &mut [f64], d: &mut Draw) {
+        let c = ctx();
+        if f[T] < f[WARN] {
+            // 예고: 지나갈 높이에 점선 + 참새 그림자
+            if f[T] < f[WARN] - 0.7 * c.speed {
+                return;
+            }
+            let ly = round(f[Y]);
+            let mut x = 2.0;
+            while x < c.w {
+                d.style(INK);
+                d.rect(x - 1.0, ly - 1.0, 5.0, 3.0);
+                d.style(pc("red", 3));
+                d.rect(x, ly, 3.0, 1.0);
+                x += 6.0;
+            }
+            if !odd(f[T] * 10.0) {
+                d.save();
+                d.alpha(0.6);
+                birds(f, d, true, if f[DIR] > 0.0 { 20.0 } else { c.w - 20.0 });
+                d.restore();
+            }
+            return;
+        }
+        if f[LOW] != 0.0 && f[FLEE] == 0.0 {
+            d.shadow(f[X], 20.0);
+        }
+        birds(f, d, false, f[X]);
     }
 }
 
@@ -498,6 +631,31 @@ pub mod parcel {
         reward("shatter", f[X], GROUND - 16.0);
         true
     }
+    pub const DRAW: Schema = &[];
+    pub fn draw(f: &mut [f64], d: &mut Draw) {
+        let c = ctx();
+        let k = if f[STATE] == S_WARN { f[T] / f[WARN] } else { 1.0 };
+        d.rgba(30.0, 16.0, 14.0, 0.2 + 0.4 * k);
+        d.rect(round(f[X] - 4.0 - 4.0 * k), GROUND, round(8.0 + 8.0 * k), 2.0);
+        if f[STATE] == S_WARN {
+            d.top_mark(f[X], f[T]);
+            return;
+        }
+        // 내려앉은 상자 뒤로 숨비가 지나가면 반투명 · 쿵 박힐 때 살짝 눌림
+        let rest = f[STATE] == S_REST;
+        if rest && (c.px - f[X]).abs() < 12.0 && c.py > f[Y] {
+            d.alpha(0.6);
+        }
+        let dip = if rest && f[REST_T] < 0.05 {
+            2.0
+        } else if rest && f[REST_T] < 0.1 {
+            1.0
+        } else {
+            0.0
+        };
+        d.img(named("PARCEL"), round(f[X] - 9.0), round(f[Y] - 1.0) + dip);
+        d.alpha(1.0);
+    }
 }
 
 // ── 패러글라이더: 위를 밟으면 튀어 오르고 처음 한 번은 귤 둘 ──
@@ -553,6 +711,16 @@ pub mod glider {
         light(f[X], f[Y] - 8.0, 24.0, pc("teal", 3), 0.7);
         true
     }
+    pub const DRAW: Schema = &[];
+    // 밟힌 순간 한 칸 눌림 (그릴 때마다 sq가 줄어듦) · 사라지기 직전 깜빡
+    pub fn draw(f: &mut [f64], d: &mut Draw) {
+        let sq = if f[SQ] > 0.0 { 1.0 } else { 0.0 };
+        f[SQ] = max(0.0, or(f[SQ], 0.0) - 1.0 / 120.0);
+        d.save();
+        d.alpha(if f[LIFE] < 1.0 && odd(f[LIFE] * 10.0) { 0.4 } else { 1.0 });
+        d.img(named("GLIDER"), round(f[X] - 15.0), round(f[Y] - 12.0 + sq));
+        d.restore();
+    }
 }
 
 // ── 돌고래: 물에서 솟아 포물선으로 넘어감 ──
@@ -590,9 +758,7 @@ pub mod dolphin {
         }
         if s >= 0.0 {
             f[S] = s;
-            let k = min(1.0, s);
-            f[X] = lerp(f[X0], f[X1], k);
-            f[Y] = GROUND + 10.0 - (f[PEAK] + 10.0) * 4.0 * k * (1.0 - k);
+            (f[X], f[Y]) = pos(f, min(1.0, s));
             if random() < dt * 40.0 {
                 let dir = f[DIR];
                 let y = f[Y] + rand(-2.0, 2.0);
@@ -618,6 +784,60 @@ pub mod dolphin {
         spark(sx, sy);
         sfx("tink");
         true
+    }
+    pub const DRAW: Schema = &[];
+    // 궤도 위 s(0 → 1) 자리
+    pub fn pos(f: &[f64], s: f64) -> (f64, f64) {
+        (lerp(f[X0], f[X1], s), GROUND + 10.0 - (f[PEAK] + 10.0) * 4.0 * s * (1.0 - s))
+    }
+    // 지나갈 길: 처음엔 또렷한 점선, 뛰어오르면 남은 길만 옅게 · 솟을 자리와 떨어질 자리에 조여 드는 물결 고리
+    pub fn decal(f: &mut [f64], d: &mut Draw) {
+        let s0 = max(0.0, f[S]);
+        let on = f[S] < 0.0;
+        if on || s0 < 0.6 {
+            let mut s = s0;
+            while s <= 1.001 {
+                let (x, y) = pos(f, s);
+                if y <= GROUND - 2.0 {
+                    if on {
+                        d.style(INK);
+                        d.rect(round(x) - 1.0, round(y) - 1.0, 3.0, 3.0);
+                        d.style(pc("red", 3));
+                    } else {
+                        d.rgba(232.0, 69.0, 74.0, 0.35);
+                    }
+                    d.rect(round(x), round(y), 1.0, 1.0);
+                }
+                s += 0.045;
+            }
+        }
+        if on {
+            let k = clamp(f[T] / f[WARN], 0.0, 1.0);
+            for ex in [f[X0], f[X1]] {
+                let r = round(10.0 - 6.0 * k);
+                d.style(INK);
+                d.rect(round(ex - r - 1.0), GROUND - 1.0, 2.0 * r + 3.0, 3.0);
+                d.style(hexc(if odd(f[T] * 12.0) { 0x9ec2d4 } else { 0xcfe4ec }));
+                d.rect(round(ex - r), GROUND, 2.0 * r + 1.0, 1.0);
+            }
+        }
+    }
+    pub fn draw(f: &mut [f64], d: &mut Draw) {
+        if f[S] < 0.0 {
+            return;
+        }
+        let i = if f[S] < 0.38 {
+            0.0
+        } else if f[S] < 0.62 {
+            1.0
+        } else {
+            2.0
+        };
+        let fr = named(if f[DIR] > 0.0 { "DOLPHIN" } else { "DOLPHIN_L" }).at(i);
+        d.save();
+        d.clip(-60.0, -VOFF - 40.0, ctx().w + 120.0, GROUND + VOFF + 40.0); // 물 밑으로는 안 보이게
+        d.img(fr, round(f[X] - 13.0), round(f[Y] - 9.0));
+        d.restore();
     }
 }
 
@@ -713,7 +933,7 @@ pub mod crow {
             f[GH_T] = or(f[GH_T], 0.0) - dt;
             if f[GH_T] <= 0.0 {
                 f[GH_T] = 0.03;
-                hook("ghost", f[X], f[Y], 0.15, pc("red", 2));
+                ghost(frame(f), f[X], f[Y], 0.15, pc("red", 2));
             }
             if f[Y] >= GROUND - 4.0 {
                 // 땅에 꽂히는 순간 (숨비 가까이면 짧게 멈칫)
@@ -756,6 +976,58 @@ pub mod crow {
         burst(f[X], f[Y], 8.0, &[hexc(0x2c2634), hexc(0x40384c), hexc(0x5a5268)], 60.0, 0.6, 120.0, "chunk");
         reward("shatter", f[X], f[Y] - 10.0);
         true
+    }
+    pub const DRAW: Schema = &[];
+    // 지금 그림: 내리꽂는 중이면 날개 접은 그림, 아니면 날갯짓 (동굴에서는 박쥐) — 잔상도 이 그림
+    pub fn frame(f: &[f64]) -> Img {
+        let dive = f[STATE] == S_DIVE;
+        let set = named(if f[BAT] != 0.0 { "BAT" } else { "CROW" }).side(if dive { f[VX] } else { f[FACE] } >= 0.0);
+        if dive {
+            set.at(3.0)
+        } else {
+            set.at([0.0, 1.0, 2.0, 1.0][(f[ANIM].floor() % 4.0) as usize])
+        }
+    }
+    // 조준선: 따라다니는 동안은 옅게, 굳으면 붉은 점선이 빨라지게 깜빡 + 땅에 ×
+    pub fn decal(f: &mut [f64], d: &mut Draw) {
+        if f[STATE] != S_AIM {
+            return;
+        }
+        let c = ctx();
+        if f[LOCKED] == 0.0 {
+            d.rgba(232.0, 69.0, 74.0, 0.3);
+            let dx = c.px - f[X];
+            let dy = max(50.0, c.py - 10.0 - f[Y]);
+            let n = hypot(dx, dy) / 6.0;
+            let mut i = 1.0;
+            while i < n {
+                d.rect(round(f[X] + dx * i / n), round(f[Y] + dy * i / n), 1.0, 1.0);
+                i += 1.0;
+            }
+            return;
+        }
+        let left = 0.9 * c.speed - f[T];
+        let blink = odd(f[T] * if left < 0.25 * c.speed { 20.0 } else { 8.0 });
+        let n = hypot(f[GX] - f[X], GROUND - 4.0 - f[Y]) / 5.0;
+        let mut i = 1.0;
+        while i < n {
+            let x = round(lerp(f[X], f[GX], i / n));
+            let y = round(lerp(f[Y], GROUND - 4.0, i / n));
+            d.style(INK);
+            d.rect(x - 1.0, y - 1.0, 3.0, 3.0);
+            d.style(if blink { pc("yel", 3) } else { pc("red", 3) });
+            d.rect(x, y, 1.0, 1.0);
+            i += 1.0;
+        }
+        let gx = round(f[GX]);
+        d.style(INK);
+        d.rect(gx - 3.0, GROUND - 1.0, 7.0, 3.0);
+        d.style(pc("red", 3));
+        d.rect(gx - 2.0, GROUND, 5.0, 1.0);
+        d.rect(gx, GROUND - 1.0, 1.0, 3.0);
+    }
+    pub fn draw(f: &mut [f64], d: &mut Draw) {
+        d.img(frame(f), round(f[X] - 9.0), round(f[Y] - 7.0));
     }
 }
 
@@ -859,5 +1131,53 @@ pub mod dialect {
         spark(sx, sy);
         sfx("tink");
         true
+    }
+    pub const DRAW: Schema = &[];
+    // 떨어질 자리: 짙어지는 그림자 · 양 끝 깜빡이 · 낱말 그림자 · 위쪽 예고
+    pub fn decal(f: &mut [f64], d: &mut Draw) {
+        if f[ST] != S_WARN {
+            return;
+        }
+        let (x, t, w, h) = (f[X], f[T], f[W], f[H]);
+        let k = clamp(t / (f[LAND] - f[FALL]), 0.0, 1.0);
+        let ww = round(w * (0.5 + 0.5 * k));
+        let blink = odd(t * if k > 0.7 { 18.0 } else { 6.0 });
+        d.rgba(30.0, 16.0, 14.0, 0.15 + 0.45 * k);
+        d.rect(round(x - ww / 2.0), GROUND, ww, 2.0);
+        d.rect(round(x - ww / 2.0) + 3.0, GROUND - 1.0, ww - 6.0, 1.0);
+        d.style(if blink { pc("yel", 3) } else { pc("red", 3) });
+        for ex in [x - w / 2.0, x + w / 2.0 - 2.0] {
+            d.rect(round(ex), GROUND + 2.0, 2.0, 1.0);
+        }
+        if k > 0.25 {
+            d.save();
+            d.alpha(0.18 + 0.2 * k);
+            d.img_sil(own(), pc("red", 2), round(x - w / 2.0), GROUND - h);
+            d.restore();
+        }
+        d.top_mark(x - w / 2.0 + 3.0, t);
+        d.top_mark(x + w / 2.0 - 3.0, t);
+    }
+    // 떨어지는 낱말 · 쿵 박힐 때 살짝 찌그러짐 · 박힌 자리 금
+    pub fn draw(f: &mut [f64], d: &mut Draw) {
+        if f[ST] == S_WARN {
+            return;
+        }
+        let (w, h) = (f[W], f[H]);
+        let sq = if f[ST] == S_LAND && f[L_T] < 0.08 { 2.0 } else { 0.0 };
+        let (x, y) = (round(f[X] - w / 2.0), round(f[Y]));
+        if sq != 0.0 {
+            d.img_scaled(own(), x - 2.0, y + sq, w + 4.0, h - sq);
+        } else {
+            d.img(own(), x, y);
+        }
+        if f[ST] == S_LAND {
+            d.style(INK);
+            let mut k = 0.0;
+            while k < w {
+                d.rect(x + k, GROUND - 1.0 - ((k / 5.0) % 2.0), 3.0, 1.0);
+                k += 5.0;
+            }
+        }
     }
 }

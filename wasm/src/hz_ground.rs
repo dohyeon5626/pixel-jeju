@@ -1,5 +1,6 @@
 // 땅 · 화면 끝에서 오는 장애물 (원래 game.js): 솟는 돌하르방 · 꼬마 하르방 · 화산탄/낙석 · 조랑말 · 날아오는 돌 · 테왁 · 캐리어 · 똥돼지 · 렌터카
 //  모듈마다 필드 목록(SCHEMA) · 움직임(update → 살아 있으면 true) · 판정 상자(boxes) · 맞았을 때(on)
+use crate::draw::*;
 use crate::game::*;
 use crate::js::*;
 
@@ -91,6 +92,44 @@ pub mod rise {
         sfx("tink");
         true
     }
+    // 그리기 전용: 땅이 갈라지는 금 [dx, dy, 순서] 묶음
+    pub const DRAW: Schema = &[("crack", Ty::List)];
+    const CRACK: usize = SCHEMA.len();
+    // 솟을 자리: 달아오르는 땅 · 점점 벌어지는 금
+    pub fn decal(f: &mut [f64], d: &mut Draw) {
+        let warn = f[PHASE] == P_WARN;
+        let k = if warn { clamp(f[T] / f[WARN], 0.0, 1.0) } else { 1.0 };
+        let n = (k * 10.0).ceil();
+        let glow = warn && odd(f[T] * 14.0);
+        if warn {
+            d.rgba(255.0, 150.0, 60.0, 0.15 + 0.35 * k);
+            d.rect(f[X] - 9.0, GROUND - 1.0, 19.0, 2.0);
+        }
+        let col = hexc(if !warn {
+            0x1a0c0c
+        } else if glow {
+            0xffe08a
+        } else {
+            0xff9a3a
+        });
+        for c in list(f, CRACK).chunks(3) {
+            if c[2] < n {
+                d.style(col);
+                d.rect(f[X] + c[0], GROUND + c[1], 1.0, 2.0);
+            }
+        }
+    }
+    pub fn draw(f: &mut [f64], d: &mut Draw) {
+        if f[PHASE] == P_WARN {
+            return;
+        }
+        let img = named("HAREUBANG");
+        let over = if f[PHASE] == P_RISE { round(3.0 * (1.0 - clamp(f[T] / 0.16, 0.0, 1.0))) } else { 0.0 };
+        d.save();
+        d.clip(-20.0, -60.0, ctx().w + 40.0, GROUND + 62.0);
+        d.img(img, round(f[X] - img.w() / 2.0), round(GROUND + 2.0 - img.h() * f[UP]) - over);
+        d.restore();
+    }
 }
 
 // ── 꼬마 하르방: 통통 튀며 건너옴 (밟거나 맞히면 부서짐) ──
@@ -157,6 +196,21 @@ pub mod hopper {
         sfx("shatter");
         reward(if ev == EV_STOMP { "stompKill" } else { "shotKill" }, f[X], f[Y] - 26.0);
         true
+    }
+    pub const DRAW: Schema = &[];
+    pub fn draw(f: &mut [f64], d: &mut Draw) {
+        let dir = f[DIR];
+        if if dir > 0.0 { f[X] < -10.0 } else { f[X] > ctx().w + 10.0 } {
+            // 화면 밖: 끝에 꺾쇠 예고
+            if even(f[T] * 10.0) {
+                d.chev(dir, GROUND - 10.0, pc("red", 3));
+            }
+            return;
+        }
+        let img = named("MINI").side(dir > 0.0);
+        let air = GROUND - f[Y];
+        d.shadow(f[X], clamp(14.0 - air / 5.0, 5.0, 14.0));
+        d.img(img, round(f[X] - img.w() / 2.0), round(f[Y] + 1.0 - img.h()));
     }
 }
 
@@ -269,7 +323,7 @@ pub mod meteor {
                         let size = randi(1.0, 3.0);
                         Fx { vx, vy, life, size, ..Fx::new("smoke", x, GROUND - 6.0) }.emit();
                     }
-                    decal(tx, 6.0);
+                    scorch(tx, 6.0);
                 }
             }
         } else if f[PHASE] == P_BOOM {
@@ -310,6 +364,86 @@ pub mod meteor {
             vec![]
         }
     }
+    // 그리기 전용: 낙석 모양 번호 (처음 그릴 때 FALLROCKS에서 하나 고름)
+    pub const DRAW: Schema = &[("rsI", Ty::Num)];
+    const RS: usize = SCHEMA.len();
+    // 떨어질 자리 표시 · 식어 가는 용암
+    pub fn decal(f: &mut [f64], d: &mut Draw) {
+        let (tx, t) = (f[TX], f[T]);
+        let rock = f[ROCK] != 0.0;
+        if f[PHASE] == P_FALL {
+            if f[Y] < -VOFF + 40.0 {
+                d.top_mark(f[X], t);
+            }
+            let k = clamp(t / f[FALL], 0.0, 1.0);
+            let rx = 15.0;
+            let rk = round(rx * k);
+            let blink = odd(t * (6.0 + k * 18.0));
+            if rock {
+                // 동굴: 먹 받침 (어두운 바닥에서도 보이게)
+                d.style(INK);
+                for s in [-1.0, 1.0] {
+                    d.rect(tx + s * rx - 1.0, GROUND - 3.0, 3.0, 7.0);
+                }
+                d.rect(tx - rk - 1.0, GROUND - 1.0, rk * 2.0 + 3.0, 4.0);
+            }
+            d.style(if blink { pc("red", 2) } else { pc("yel", 2) });
+            for s in [-1.0, 1.0] {
+                d.rect(tx + s * rx, GROUND - 1.0, 1.0, 3.0);
+                d.rect(tx + s * (rx - 1.0), GROUND - 2.0, 1.0, 1.0);
+                d.rect(tx + s * (rx - 1.0), GROUND + 2.0, 1.0, 1.0);
+            }
+            if rock {
+                d.rgba(255.0, if blink { 120.0 } else { 200.0 }, 70.0, 0.35 + k * 0.45);
+            } else {
+                d.rgba(200.0, 40.0, 20.0, 0.15 + k * 0.35);
+            }
+            d.rect(tx - rk, GROUND, rk * 2.0 + 1.0, 2.0);
+        } else if f[PHASE] == P_LAVA {
+            let cool = if t > 1.1 { (t - 1.1) / 0.4 } else { 0.0 };
+            d.style(hexc(if cool > 0.5 { 0x4a2a28 } else { 0xc83a18 }));
+            d.rect(tx - 11.0, GROUND, 23.0, 2.0);
+            d.rect(tx - 9.0, GROUND - 1.0, 19.0, 1.0);
+            d.style(if cool > 0.5 {
+                hexc(0x6a3a30)
+            } else if odd(t * 6.0) {
+                pc("yel", 2)
+            } else {
+                pc("org", 3)
+            });
+            d.rect(tx - 7.0, GROUND, 15.0, 1.0);
+        }
+    }
+    pub fn draw(f: &mut [f64], d: &mut Draw) {
+        let (tx, t) = (f[TX], f[T]);
+        let rock = f[ROCK] != 0.0;
+        if f[PHASE] == P_FALL {
+            if rock {
+                // 낙석은 하나씩 다른 돌이 구르며 떨어짐
+                let rocks = named("FALLROCKS");
+                if f[RS].is_nan() {
+                    f[RS] = (random() * rocks.len()).floor();
+                }
+                let fr = rocks.at(f[RS]).at((t * 9.0 + tx).floor() % 4.0);
+                d.img(fr, round(f[X] - fr.w() / 2.0), round(f[Y] - fr.h() / 2.0));
+            } else {
+                d.img(named("METEOR"), round(f[X] - 7.0), round(f[Y] - 7.0));
+            }
+        } else if f[PHASE] == P_BOOM && rock {
+            let k = t / 0.3;
+            d.alpha(1.0 - k);
+            d.disc(tx, GROUND - 5.0, round(6.0 + k * 12.0), hexc(0x5a5262));
+            d.alpha(1.0);
+        } else if f[PHASE] == P_BOOM {
+            let k = t / 0.3;
+            let r = round(5.0 + k * 16.0);
+            if k < 0.3 {
+                d.disc(tx, GROUND - 7.0, r + 2.0, hexc(0xfff4e0));
+            }
+            d.disc(tx, GROUND - 7.0, r, if k < 0.5 { pc("yel", 3) } else { pc("org", 3) });
+            d.disc(tx, GROUND - 7.0, max(1.0, r - 5.0), if k < 0.5 { hexc(0xfff4e0) } else { pc("yel", 2) });
+        }
+    }
 }
 
 // ── 조랑말 떼: 밟으면 튕겨 오름 ──
@@ -344,6 +478,12 @@ pub mod pony {
         spark(sx, sy);
         sfx("tink");
         true
+    }
+    pub const DRAW: Schema = &[];
+    pub fn draw(f: &mut [f64], d: &mut Draw) {
+        let fr = named("PONY").at(f[ANIM].floor() % 6.0).side(f[DIR] > 0.0);
+        d.shadow(f[X], 22.0);
+        d.img(fr, round(f[X] - fr.ax()), round(GROUND - fr.ay()));
     }
 }
 
@@ -387,6 +527,23 @@ pub mod pebble {
         reward("shatter", f[X], f[Y] - 8.0);
         true
     }
+    // 그리기 전용: 데굴데굴 도는 빠르기 (모양은 이 돌의 spr 네 장)
+    pub const DRAW: Schema = &[("spin", Ty::Num)];
+    const SPIN: usize = SCHEMA.len();
+    pub fn draw(f: &mut [f64], d: &mut Draw) {
+        let dir = f[DIR];
+        if if dir > 0.0 { f[X] < -4.0 } else { f[X] > ctx().w + 4.0 } {
+            if even(f[T] * 12.0) {
+                d.chev(dir, f[Y], pc("red", 3));
+            }
+            return;
+        }
+        d.rgba(255.0, 244.0, 224.0, 0.6);
+        d.rect(round(f[X] - dir * 10.0 - 3.0), round(f[Y] - 1.0), 6.0, 1.0);
+        d.rect(round(f[X] - dir * 17.0 - 2.0), round(f[Y] + 1.0), 4.0, 1.0);
+        let fr = own().at((((f[T] * f[SPIN] + f[PH]).floor() * dir) % 4.0 + 4.0) % 4.0);
+        d.img(fr, round(f[X] - fr.w() / 2.0), round(f[Y] - fr.h() / 2.0));
+    }
 }
 
 // ── 굴러오는 테왁 ──
@@ -425,6 +582,19 @@ pub mod tewak {
         burst(f[X], f[Y] - 6.0, 10.0, &[pc("org", 2), pc("org", 3), hexc(0xffffff)], 70.0, 0.4, 260.0, "px");
         reward("shatter", f[X], f[Y] - 14.0);
         true
+    }
+    pub const DRAW: Schema = &[];
+    pub fn draw(f: &mut [f64], d: &mut Draw) {
+        let dir = f[DIR];
+        if if dir > 0.0 { f[X] < -6.0 } else { f[X] > ctx().w + 6.0 } {
+            if even(f[T] * 12.0) {
+                d.chev(dir, GROUND - 14.0, pc("org", 3));
+            }
+            return;
+        }
+        d.shadow(f[X], 9.0);
+        let img = named("TEWAK").at((((f[X] / 6.0).floor() * dir) % 4.0 + 4.0) % 4.0);
+        d.img(img, round(f[X] - 6.0), round(f[Y] - 11.0));
     }
 }
 
@@ -486,6 +656,14 @@ pub mod suitcase {
         sfx("shatter");
         reward(if ev == EV_STOMP { "stompKill" } else { "shatter" }, f[X], f[Y] - 20.0);
         true
+    }
+    // 그리기 전용: 캐리어 모양 번호
+    pub const DRAW: Schema = &[("k", Ty::Num)];
+    const K: usize = SCHEMA.len();
+    pub fn draw(f: &mut [f64], d: &mut Draw) {
+        let s = named("SUITCASES").at(f[K]).side(f[DIR] <= 0.0); // 오른쪽으로 가면 왼쪽 그림 (손잡이가 뒤로)
+        d.shadow(f[X], s.w() - 2.0);
+        d.img(s, round(f[X] - s.w() / 2.0), round(f[Y] - s.h() + 3.0));
     }
 }
 
@@ -553,6 +731,13 @@ pub mod pig {
         }
         true
     }
+    pub const DRAW: Schema = &[];
+    pub fn draw(f: &mut [f64], d: &mut Draw) {
+        let fr = named("PIG").at(f[ANIM].floor() % 4.0).side(f[DIR] > 0.0);
+        let bob = if f[LEAP] != 0.0 && f[LEAPED] == 0.0 { -round(sin(f[ANIM] * 1.57).abs() * 3.0) } else { 0.0 };
+        d.shadow(f[X], 20.0);
+        d.img(fr, round(f[X] - fr.ax()), round(f[Y] - fr.ay()) + bob);
+    }
 }
 
 // ── 렌터카 대행진: 숨비 가까이서 빵! ──
@@ -593,5 +778,11 @@ pub mod rentcar {
         spark(sx, sy);
         sfx("tink");
         true
+    }
+    pub const DRAW: Schema = &[];
+    pub fn draw(f: &mut [f64], d: &mut Draw) {
+        let c = named("RENTCAR").side(f[DIR] > 0.0);
+        d.shadow(f[X], 28.0);
+        d.img(c, round(f[X] - 16.0), round(GROUND - 17.0));
     }
 }

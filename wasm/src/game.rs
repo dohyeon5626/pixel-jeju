@@ -32,12 +32,12 @@ pub const SFX: [&str; 26] = [
 pub const REWARDS: [&str; 4] = ["stompKill", "shotKill", "shatter", "bigShatter"];
 pub const PALS: [&str; 10] = ["soil", "stone", "yel", "org", "red", "teal", "leaf", "cloth", "wood", "skin"];
 // JS 쪽 일 (글자 · 새 객체 · 사운드 덕킹처럼 Rust가 못 하는 것): 부르기 전에 JS가 지금 장애물 객체를 최신 값으로 맞춰 둠
-//  daily(글) · popup(글, x, y, 색) · tang(x, y, vx, vy) · splash(x, 크기) · ghost(x, y, 수명, 색) · glyphs(x, y) · split() · kick(dx, dy) · duck(t) · mean(x, y)
+//  daily(글) · popup(글, x, y, 색) · tang(x, y, vx, vy) · splash(x, 크기) · glyphs(x, y) · split() · kick(dx, dy) · duck(t) · mean(x, y)
 //  label(x, y, 색) · flash(t, 색) · bolt() · ripple(x, dir) · gset(G 필드, 값)
-pub const HOOKS: [&str; 15] =
-    ["daily", "popup", "tang", "splash", "ghost", "glyphs", "split", "kick", "duck", "mean", "label", "flash", "bolt", "ripple", "gset"];
+pub const HOOKS: [&str; 14] =
+    ["daily", "popup", "tang", "splash", "glyphs", "split", "kick", "duck", "mean", "label", "flash", "bolt", "ripple", "gset"];
 // hook에 넘기는 글 · 팔레트에 없는 CSS 색 · gset으로 고치는 G 필드
-pub const STRS: [&str; 3] = ["bee", "+귤", "격파"];
+pub const STRS: [&str; 11] = ["bee", "+귤", "격파", "×", "+♥", "방패", "귤+5", "점수×2", "귤자석", "삼다수", "+1"];
 pub const CSS: [&str; 7] = [
     "rgba(255,244,224,0.45)",
     "rgba(255,244,224,0.5)",
@@ -48,17 +48,23 @@ pub const CSS: [&str; 7] = [
     "rgba(255,200,180,0.45)",
 ];
 pub const GFIELDS: [&str; 5] = ["windTarget", "storm", "stormHold", "stormDir", "lightning"];
-fn idx(list: &[&str], k: &str) -> f64 {
+pub fn idx(list: &[&str], k: &str) -> f64 {
     list.iter().position(|x| *x == k).expect("이름표에 없음") as f64
 }
 
-// ── 색: 0 이상이면 0xRRGGBB (0x1000000을 더하면 mute한 색), -1 ~ -999는 팔레트 C[이름][칸], -1000부터는 CSS 목록 ──
+// ── 색: 0 이상이면 0xRRGGBB (0x1000000을 더하면 mute한 색 · 0x2000000은 채도 0.85로 mute), -1 ~ -999는 팔레트 C[이름][칸], -1000부터는 CSS 목록 ──
 pub fn hexc(rgb: u32) -> f64 {
     rgb as f64
 }
 pub fn muted(rgb: u32) -> f64 {
     (rgb | 0x1000000) as f64
 }
+// mute(색, 0.85) (파도 TIDE 팔레트)
+pub fn muted85(rgb: u32) -> f64 {
+    (rgb | 0x2000000) as f64
+}
+// 먹선 (JS INK = C.ink)
+pub const INK: f64 = 0x201614 as f64;
 pub fn css(s: &str) -> f64 {
     -1000.0 - idx(&CSS, s)
 }
@@ -67,7 +73,7 @@ pub fn pc(pal: &str, i: usize) -> f64 {
 }
 
 // ── 지금 판의 값 (JS가 부르기 전에 CTX_BUF에 씀) ──
-//  화면 폭 · 숨비 자리 · 숨비 죽음 · 경기장 양 끝 · 속도 배율 · 귤자석 남은 시간 · 음악 템포(없으면 0) · 단계 · 먹구름 · 번개
+//  화면 폭 · 숨비 자리 · 숨비 죽음 · 경기장 양 끝 · 속도 배율 · 귤자석 남은 시간 · 음악 템포(없으면 0) · 단계 · 먹구름 · 번개 · 화면 시간(amb.t)
 pub struct Ctx {
     pub w: f64,
     pub px: f64,
@@ -81,9 +87,10 @@ pub struct Ctx {
     pub tier: f64,
     pub storm: f64,
     pub lightning: f64,
+    pub amb_t: f64,
 }
-pub const CTX_LEN: usize = 12;
-static mut CTX_BUF: [f64; CTX_LEN] = [426.0, 0.0, 0.0, 0.0, 0.0, 426.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+pub const CTX_LEN: usize = 13;
+static mut CTX_BUF: [f64; CTX_LEN] = [426.0, 0.0, 0.0, 0.0, 0.0, 426.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
 pub fn ctx_buf() -> *mut f64 {
     unsafe { std::ptr::addr_of_mut!(CTX_BUF) as *mut f64 }
 }
@@ -102,6 +109,7 @@ pub fn ctx() -> Ctx {
         tier: b[9],
         storm: b[10],
         lightning: b[11],
+        amb_t: b[12],
     }
 }
 
@@ -220,7 +228,8 @@ pub fn hitstop(t: f64, cd: f64) {
 pub fn reward(kind: &str, x: f64, y: f64) {
     unsafe { jreward(idx(&REWARDS, kind), x, y) }
 }
-pub fn decal(x: f64, life: f64) {
+// 땅에 그을린 자국 (G.decals)
+pub fn scorch(x: f64, life: f64) {
     unsafe { jdecal(x, life) }
 }
 // 귤 즙 튀김 (원래 JS juice)
@@ -245,31 +254,40 @@ pub const EV_STOMP: i32 = 1;
 pub const EV_BOUNCE: i32 = 2;
 
 // ── 장애물 필드 ───────────────────────────────────────────────
-// 필드 종류: 숫자 · 참거짓 · 이름(단계 같은 문자열, 목록 안 번호로 주고받음)
+// 필드 종류: 숫자 · 참거짓 · 이름(단계 같은 문자열, 목록 안 번호로 주고받음) · 목록(그리기용 숫자 배열, 읽기만 — draw::list로 꺼냄)
 pub enum Ty {
     Num,
     Bool,
     Enum(&'static [&'static str]),
+    List,
 }
 pub type Schema = &'static [(&'static str, Ty)];
 // 판정 상자 (x · y · w · h)
 pub type Boxes = Vec<[f64; 4]>;
 
 // 이름표 · 장애물 필드 목록을 JSON으로 (JS가 처음에 한 번 읽음)
-pub fn tables_json(kinds: &[(&str, Schema)]) -> String {
+//  kinds: 움직임 · 판정에 쓰는 필드, dkinds: 그리기에 쓰는 필드 (같은 필드 뒤에 그리기 전용 필드를 붙임)
+pub fn tables_json(kinds: &[(&str, Schema, Schema)]) -> String {
     let list = |v: &[&str]| format!("[{}]", v.iter().map(|s| format!("\"{}\"", s)).collect::<Vec<_>>().join(","));
     let ty = |t: &Ty| match t {
         Ty::Num => "\"n\"".to_string(),
         Ty::Bool => "\"b\"".to_string(),
         Ty::Enum(v) => list(v),
+        Ty::List => "\"l\"".to_string(),
     };
-    let kinds = kinds
-        .iter()
-        .map(|(k, s)| format!("\"{}\":[{}]", k, s.iter().map(|(n, t)| format!("[\"{}\",{}]", n, ty(t))).collect::<Vec<_>>().join(",")))
-        .collect::<Vec<_>>()
-        .join(",");
+    let fields = |s: &[&(&str, Ty)]| s.iter().map(|(n, t)| format!("[\"{}\",{}]", n, ty(t))).collect::<Vec<_>>().join(",");
+    let map = |with_draw: bool| {
+        kinds
+            .iter()
+            .map(|(k, s, d)| {
+                let all: Vec<&(&str, Ty)> = s.iter().chain(if with_draw { d.iter() } else { [].iter() }).collect();
+                format!("\"{}\":[{}]", k, fields(&all))
+            })
+            .collect::<Vec<_>>()
+            .join(",")
+    };
     format!(
-        "{{\"fx\":{},\"sfx\":{},\"rewards\":{},\"pals\":{},\"hooks\":{},\"strs\":{},\"css\":{},\"gfields\":{},\"kinds\":{{{}}}}}",
+        "{{\"fx\":{},\"sfx\":{},\"rewards\":{},\"pals\":{},\"hooks\":{},\"strs\":{},\"css\":{},\"gfields\":{},\"named\":{},\"props\":{},\"kinds\":{{{}}},\"dkinds\":{{{}}}}}",
         list(&FX_KINDS),
         list(&SFX),
         list(&REWARDS),
@@ -278,6 +296,9 @@ pub fn tables_json(kinds: &[(&str, Schema)]) -> String {
         list(&STRS),
         list(&CSS),
         list(&GFIELDS),
-        kinds
+        list(&crate::draw::NAMED),
+        list(&crate::draw::PROPS),
+        map(false),
+        map(true)
     )
 }

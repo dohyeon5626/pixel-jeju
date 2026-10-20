@@ -403,20 +403,8 @@ class Rise { // 땅에서 솟는 돌하르방 (부술 수 없음)
   }
   update(dt) { return WK.hzUpdate(this, 'rise', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_ground.rs
   boxes() { return WK.hzBoxes(this, 'rise'); }
-  drawDecal() {
-    const k = this.phase === 'warn' ? clamp(this.t / this.warn, 0, 1) : 1, n = Math.ceil(k * 10);
-    const glow = this.phase === 'warn' && Math.floor(this.t * 14) % 2;
-    if (this.phase === 'warn') { g.fillStyle = `rgba(255,150,60,${0.15 + 0.35 * k})`; g.fillRect(this.x - 9, GROUND - 1, 19, 2); }   // 솟을 자리 땅이 달아오름
-    for (const [dx, dy, i] of this.crack) if (i < n) { g.fillStyle = this.phase === 'warn' ? (glow ? '#ffe08a' : '#ff9a3a') : '#1a0c0c'; g.fillRect(this.x + dx, GROUND + dy, 1, 2); }
-  }
-  draw() {
-    if (this.phase === 'warn') return;
-    const img = HAREUBANG;
-    const over = this.phase === 'rise' ? Math.round(3 * (1 - clamp(this.t / 0.16, 0, 1))) : 0;
-    g.save(); g.beginPath(); g.rect(-20, -60, W + 40, GROUND + 62); g.clip();
-    g.drawImage(img, Math.round(this.x - img.width / 2), Math.round(GROUND + 2 - img.height * this.up) - over);
-    g.restore();
-  }
+  drawDecal() { WK.hzDraw(this, 'rise', 1); }
+  draw() { WK.hzDraw(this, 'rise', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
   onShot(s) { return WK.hzOn(this, 'rise', 'shot', s.x, s.y); }
 }
 
@@ -430,12 +418,7 @@ class Hopper { // 꼬마 하르방: 밟거나 맞히면 부서짐
   boxes() { return WK.hzBoxes(this, 'hopper'); }
   kill(by) { WK.hzOn(this, 'hopper', by === 'stomp' ? 'stomp' : 'shot'); }
   onShot() { return WK.hzOn(this, 'hopper', 'shot'); }
-  draw() {
-    if (this.dir > 0 ? this.x < -10 : this.x > W + 10) { if (Math.floor(this.t * 10) % 2 === 0) edgeChev(this.dir, GROUND - 10); return; }
-    const img = MINI[this.dir > 0 ? 'r' : 'l'], air = GROUND - this.y;
-    drawShadow(this.x, clamp(14 - air / 5, 5, 14));
-    g.drawImage(img, Math.round(this.x - img.width / 2), Math.round(this.y + 1 - img.height));
-  }
+  draw() { WK.hzDraw(this, 'hopper', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 
 // 동굴 낙석: 천장에서 떨어진 뾰족한 현무암 덩이
@@ -448,41 +431,15 @@ class Meteor { // 한라산 화산탄 (동굴에서는 천장에서 떨어지는
   }
   update(dt) { return WK.hzUpdate(this, 'meteor', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_ground.rs
   boxes() { return WK.hzBoxes(this, 'meteor'); }
-  drawDecal() {
-    if (this.phase === 'fall') {
-      if (this.y < -VOFF + 40) topMark(this.x, this.t);
-      const k = clamp(this.t / this.fall, 0, 1), rx = 15, blink = Math.floor(this.t * (6 + k * 18)) % 2;
-      if (this.rock) { g.fillStyle = INK; for (const s of [-1, 1]) g.fillRect(this.tx + s * rx - 1, GROUND - 3, 3, 7); g.fillRect(this.tx - Math.round(rx * k) - 1, GROUND - 1, Math.round(rx * k) * 2 + 3, 4); }   // 동굴: 먹 받침 (어두운 바닥에서도 보이게)
-      g.fillStyle = blink ? C.red[2] : C.yel[2];
-      for (const s of [-1, 1]) { g.fillRect(this.tx + s * rx, GROUND - 1, 1, 3); g.fillRect(this.tx + s * (rx - 1), GROUND - 2, 1, 1); g.fillRect(this.tx + s * (rx - 1), GROUND + 2, 1, 1); }
-      g.fillStyle = this.rock ? `rgba(255,${blink ? 120 : 200},70,${0.35 + k * 0.45})` : `rgba(200,40,20,${0.15 + k * 0.35})`; g.fillRect(this.tx - Math.round(rx * k), GROUND, Math.round(rx * k) * 2 + 1, 2);
-    } else if (this.phase === 'lava') {
-      const cool = this.t > 1.1 ? (this.t - 1.1) / 0.4 : 0;
-      g.fillStyle = cool > 0.5 ? '#4a2a28' : '#c83a18'; g.fillRect(this.tx - 11, GROUND, 23, 2); g.fillRect(this.tx - 9, GROUND - 1, 19, 1);
-      g.fillStyle = cool > 0.5 ? '#6a3a30' : (Math.floor(this.t * 6) % 2 ? C.yel[2] : C.org[3]); g.fillRect(this.tx - 7, GROUND, 15, 1);
-    }
-  }
-  draw() {
-    if (this.phase === 'fall') { if (this.rock) { this.rs = this.rs || pick(FALLROCKS); const f = this.rs[Math.floor(this.t * 9 + this.tx) % 4]; g.drawImage(f, Math.round(this.x - f.width / 2), Math.round(this.y - f.height / 2)); } else g.drawImage(METEOR, Math.round(this.x - 7), Math.round(this.y - 7)); }   /* 낙석은 하나씩 다른 돌이 구르며 떨어짐 */
-    else if (this.phase === 'boom' && this.rock) { const k = this.t / 0.3; g.globalAlpha = 1 - k; disc(g, this.tx, GROUND - 5, Math.round(6 + k * 12), '#5a5262'); g.globalAlpha = 1; }
-    else if (this.phase === 'boom') {
-      const k = this.t / 0.3, r = Math.round(5 + k * 16);
-      if (k < 0.3) disc(g, this.tx, GROUND - 7, r + 2, '#fff4e0');
-      disc(g, this.tx, GROUND - 7, r, k < 0.5 ? C.yel[3] : C.org[3]);
-      disc(g, this.tx, GROUND - 7, Math.max(1, r - 5), k < 0.5 ? '#fff4e0' : C.yel[2]);
-    }
-  }
+  drawDecal() { WK.hzDraw(this, 'meteor', 1); }
+  draw() { WK.hzDraw(this, 'meteor', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 
 class Pony { // 조랑말 떼: 밟으면 튕겨 오름
   constructor(dir, off) { this.dir = dir; this.x = dir > 0 ? -18 - off : W + 18 + off; this.speed = (rand(140, 160) + G.diff * 8) * Math.min(1, 1.6 / G.speed); this.anim = Math.random() * 6; this.dodged = false; this.bouncy = true; }
   update(dt) { return WK.hzUpdate(this, 'pony', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_ground.rs
   boxes() { return WK.hzBoxes(this, 'pony'); }
-  draw() {
-    const f = PONY[Math.floor(this.anim) % 6][this.dir > 0 ? 'r' : 'l'];
-    drawShadow(this.x, 22);
-    g.drawImage(f, Math.round(this.x - f.ax), Math.round(GROUND - f.ay));
-  }
+  draw() { WK.hzDraw(this, 'pony', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
   onShot(s) { return WK.hzOn(this, 'pony', 'shot', s.x, s.y); }
 }
 
@@ -496,20 +453,14 @@ class Pebble {
   update(dt) { return WK.hzUpdate(this, 'pebble', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_ground.rs
   boxes() { return WK.hzBoxes(this, 'pebble'); }
   onShot() { return WK.hzOn(this, 'pebble', 'shot'); }
-  draw() {
-    if (this.dir > 0 ? this.x < -4 : this.x > W + 4) { if (Math.floor(this.t * 12) % 2 === 0) edgeChev(this.dir, this.y); return; }
-    g.fillStyle = 'rgba(255,244,224,0.6)';
-    g.fillRect(Math.round(this.x - this.dir * 10 - 3), Math.round(this.y - 1), 6, 1);
-    g.fillRect(Math.round(this.x - this.dir * 17 - 2), Math.round(this.y + 1), 4, 1);
-    const f = this.spr[((Math.floor(this.t * this.spin + this.ph) * this.dir) % 4 + 4) % 4]; g.drawImage(f, Math.round(this.x - f.width / 2), Math.round(this.y - f.height / 2));
-  }
+  draw() { WK.hzDraw(this, 'pebble', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 class Tewak {
   constructor(dir) { this.dir = dir; this.y = GROUND - 20; this.vx = dir * rand(110, 140) * Math.min(1, 1.6 / G.speed); this.x = dir > 0 ? -8 - Math.abs(this.vx) * 0.6 * G.speed : W + 8 + Math.abs(this.vx) * 0.6 * G.speed; this.t = 0; this.vy = 0; this.dodged = false; this.bouncy = true; }
   update(dt) { return WK.hzUpdate(this, 'tewak', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_ground.rs
   boxes() { return WK.hzBoxes(this, 'tewak'); }
   onShot() { return WK.hzOn(this, 'tewak', 'shot'); }
-  draw() { if (this.dir > 0 ? this.x < -6 : this.x > W + 6) { if (Math.floor(this.t * 12) % 2 === 0) edgeChev(this.dir, GROUND - 14, C.org[3]); return; } drawShadow(this.x, 9); const img = TEWAK[((Math.floor(this.x / 6) * this.dir) % 4 + 4) % 4]; g.drawImage(img, Math.round(this.x - 6), Math.round(this.y - 11)); }
+  draw() { WK.hzDraw(this, 'tewak', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 
 // ═════════════════════════════════════════════════════════════
@@ -527,12 +478,7 @@ class Bubble { // 사투리 말풍선 (귤로 맞히면 글자가 와르르)
   update(dt) { return WK.hzUpdate(this, 'bubble', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_air.rs
   boxes() { return WK.hzBoxes(this, 'bubble'); }
   onShot() { return WK.hzOn(this, 'bubble', 'shot'); }
-  draw() {
-    const pop = this.age < 0.12 ? easeBack(this.age / 0.12) : 1, wob = Math.round(Math.sin(this.age * 14) * 1);
-    const img = this.flash > 0 ? silOf(this.spr) : this.spr;
-    if (this.y + this.bodyH > GROUND - 30) drawShadow(this.x + this.w / 2, this.w * 0.6);
-    g.drawImage(img, Math.round(this.x), Math.round(this.y + wob + (1 - pop) * 6));
-  }
+  draw() { WK.hzDraw(this, 'bubble', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 
 class Rotten { // 썩은 귤
@@ -541,7 +487,7 @@ class Rotten { // 썩은 귤
   kill(by) { WK.hzOn(this, 'rotten', by === 'stomp' ? 'stomp' : 'shot'); }
   boxes() { return WK.hzBoxes(this, 'rotten'); }
   onShot() { return WK.hzOn(this, 'rotten', 'shot'); }
-  draw() { if (this.life < 1 && Math.floor(this.life * 10) % 2) return; drawShadow(this.x, 7); g.drawImage(ROTTEN, Math.round(this.x - 5), Math.round(this.y - 10)); }
+  draw() { WK.hzDraw(this, 'rotten', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 
 // ── 줍는 것 ──────────────────────────────────────────────────
@@ -569,24 +515,7 @@ class Pickup {
   box() { return { x: this.x - 6, y: this.y - 10, w: 12, h: 11 }; }
   // 귤로 맞힐 때: 아이템은 감싼 금빛 테 전체 (그리는 22×22 테두리와 같은 자리) · 그냥 귤 · 함정은 몸통만
   shotBox() { return ITEM_KINDS.includes(this.kind) ? { x: Math.round(this.x - 10) - 1, y: Math.round(this.y - 21) - 1, w: 22, h: 22 } : this.box(); }
-  draw() {
-    if (this.life < 1.2 && Math.floor(this.life * 6) % 2) return;
-    if (ITEM_KINDS.includes(this.kind)) {   // 아이템은 금빛 테 안에 넣어 썩은 귤 · 장애물과 확실히 구분
-      const pulse = Math.floor(amb.t * 6 + this.phase) % 2, bx = Math.round(this.x - 10), by = Math.round(this.y - 21);
-      g.fillStyle = INK; g.fillRect(bx - 1, by - 1, 22, 22); g.fillStyle = pulse ? C.yel[3] : C.org[3]; g.fillRect(bx, by, 20, 20); g.fillStyle = UI.panel; g.fillRect(bx + 2, by + 2, 16, 16);
-      for (let k = 0; k < 4; k++) { const a = amb.t * 3 + k * 1.57 + this.phase; g.fillStyle = '#fff4e0'; g.fillRect(Math.round(this.x + Math.cos(a) * 14), Math.round(this.y - 11 + Math.sin(a) * 14), 1, 1); }
-      light(this.x, this.y - 11, 16, C.yel[3], 0.6);
-    }
-    const img = this.kind === 'basket' ? BASKET : this.kind === 'omegi' ? OMEGI : this.kind === 'pinwheel' ? PINWHEEL[Math.floor(amb.t * 10) % 2] : this.kind === 'water' ? SAMDA : this.kind === 'fake' ? HALLABONG_FAKE : this.kind === 'bong' ? HALLABONG : this.kind === 'shield' ? TEWAK[Math.floor(this.spin * 4) % 4] : PICK_TANG[Math.floor(this.spin * 8) % 8][this.sq > 0 ? 1 : 0];
-    // 그림자: 땅에 가까울수록 크고 진하게
-    const near = clamp(1 - (GROUND - this.y) / 100, 0, 1);
-    if (near > 0.15) drawShadow(this.x, Math.round(3 + near * (img.width - 6)));
-    if (this.kind === 'fake') { const a = amb.t * 9 + this.x; g.fillStyle = INK; g.fillRect(Math.round(this.x + Math.cos(a) * 7), Math.round(this.y - 12 + Math.sin(a * 1.3) * 3), 1, 1); }
-    g.drawImage(img, Math.round(this.x - img.width / 2), Math.round(this.y - img.height + 1));
-    if (this.kind === 'water' && Math.floor(amb.t * 6 + this.phase) % 3 === 0) { g.fillStyle = '#f4fcff'; g.fillRect(Math.round(this.x + Math.cos(amb.t * 3) * 7), Math.round(this.y - 10 + Math.sin(amb.t * 4) * 6), 1, 1); light(this.x, this.y - 8, 12, '#c8f0ff', 0.5); }
-    if (this.kind === 'shield') for (let a = 0; a < 6.28; a += 0.4) { if ((Math.round(a / 0.4) + Math.floor(amb.t * 8)) % 2) continue; g.fillStyle = C.yel[3]; g.fillRect(Math.round(this.x + Math.cos(a) * 8), Math.round(this.y - img.height / 2 + Math.sin(a) * 8), 1, 1); }
-    if (ITEM_KINDS.includes(this.kind) || this.kind === 'fake' || (this.grounded && Math.abs(this.x - P.x) < 60)) drawStr(this.kind === 'fake' ? '×' : this.kind === 'bong' ? '+♥' : this.kind === 'shield' ? '방패' : this.kind === 'basket' ? '귤+5' : this.kind === 'omegi' ? '점수×2' : this.kind === 'pinwheel' ? '귤자석' : this.kind === 'water' ? '삼다수' : '+1', this.x, ITEM_KINDS.includes(this.kind) ? this.y - 31 : this.y - img.height - 8, { color: this.kind === 'fake' ? C.red[3] : C.yel[3], align: 'center' });
-  }
+  draw() { WK.hzDraw(this, 'pickup', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 
 // ── 플레이어의 귤 ────────────────────────────────────────────
@@ -594,11 +523,7 @@ class Shot {
   constructor(x, y, dir) { this.x = x; this.y = y; this.vx = dir * 250 + P.vx * 0.25; this.vy = -40; this.rot = 0; this.trail = []; }
   update(dt) { const alive = WK.hzUpdate(this, 'shot', dt); this.trail.push([this.x, this.y]); if (this.trail.length > 5) this.trail.shift(); return alive; }   // 움직임는 wasm/src/hz_item.rs
   box() { return { x: this.x - 4, y: this.y - 4, w: 8, h: 8 }; }
-  draw() {
-    this.trail.forEach(([x, y], i) => { g.fillStyle = i < 2 ? C.org[1] : C.org[2]; g.fillRect(Math.round(x), Math.round(y), 2, 2); });
-    const img = TANGERINE;
-    g.drawImage(img, Math.round(this.x - img.width / 2) + (Math.floor(this.rot) % 2), Math.round(this.y - img.height / 2));
-  }
+  draw() { WK.hzDraw(this, 'shot', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 
 // ═════════════════════════════════════════════════════════════
@@ -761,17 +686,7 @@ class Zap {
   update(dt) { return WK.hzUpdate(this, 'zap', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_air.rs
   boxes() { return WK.hzBoxes(this, 'zap'); }
   onShot() { return WK.hzOn(this, 'zap', 'shot'); }
-  draw() {
-    if (this.t < this.aim) {
-      if (Math.floor(this.t * 16) % 2) return;
-      const m = Math.hypot(this.vx, this.vy), ux = this.vx / m, uy = this.vy / m;
-      g.fillStyle = C.red[2];
-      for (let i = 1; i < 16; i++) g.fillRect(Math.round(this.ax + ux * i * 10), Math.round(this.ay + uy * i * 10), 2, 2);
-      return;
-    }
-    const spr = this.vx < 0 && this.spr.flip ? this.spr.flip : this.spr;
-    g.drawImage(spr, Math.round(this.x - spr.width / 2), Math.round(this.y - spr.height / 2));
-  }
+  draw() { WK.hzDraw(this, 'zap', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 
 // ═════════════════════════════════════════════════════════════
@@ -879,11 +794,7 @@ class Answer {
   constructor(text, x, ok) { this.text = text; this.x = x; this.y = GROUND - 50; this.ok = ok; this.t = 0; this.spr = uiSprite(text, UI.gold); }
   update(dt) { return WK.hzUpdate(this, 'answer', dt); }   // 움직임는 wasm/src/hz_item.rs
   box() { const s = this.spr; return { x: this.x - s.width / 2, y: this.y, w: s.width, h: s.bodyH }; }
-  draw() {
-    const s = this.spr, k = easeBack(Math.min(1, this.t / 0.3));
-    g.drawImage(s, Math.round(this.x - s.width / 2), Math.round(this.y + (1 - k) * 8));
-    if (this.t > 0.4 && Math.floor(this.t * 3) % 2) { const ax = Math.round(this.x), ay = this.y + s.bodyH + 3; g.fillStyle = INK; g.fillRect(ax - 3, ay - 1, 7, 5); g.fillStyle = C.yel[3]; g.fillRect(ax, ay, 1, 3); g.fillRect(ax - 1, ay + 1, 3, 1); g.fillRect(ax - 2, ay + 2, 5, 1); }
-  }
+  draw() { WK.hzDraw(this, 'answer', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 class PatQuiz extends Pattern {
   constructor() {
@@ -914,14 +825,14 @@ class Suitcase {
   // 밟으면 뚜껑이 열리며 짐이 와르르 (밟기 보상)
   kill(by) { WK.hzOn(this, 'suitcase', by === 'stomp' ? 'stomp' : 'shot'); }
   onShot() { return WK.hzOn(this, 'suitcase', 'shot'); }
-  draw() { const s = SUITCASES[this.k][this.dir > 0 ? 'l' : 'r']; drawShadow(this.x, s.width - 2); g.drawImage(s, Math.round(this.x - s.width / 2), Math.round(this.y - s.height + 3)); }
+  draw() { WK.hzDraw(this, 'suitcase', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 // ── 똥돼지 질주 ──
 class Pig {
   constructor(dir, off) { this.dir = dir; this.x = dir > 0 ? -16 - off : W + 16 + off; this.y = GROUND; this.vy = 0; this.bouncy = true; this.speed = (rand(175, 215) + G.diff * 12) * Math.min(1, 1.35 / G.speed); this.anim = Math.random() * 4; this.leap = Math.random() < 0.3 + G.diff * 0.08; this.leaped = false; this.dodged = false; }
   update(dt) { return WK.hzUpdate(this, 'pig', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_ground.rs
   boxes() { return WK.hzBoxes(this, 'pig'); }
-  draw() { const f = PIG[Math.floor(this.anim) % 4][this.dir > 0 ? 'r' : 'l'], bob = this.leap && !this.leaped ? -Math.round(Math.abs(Math.sin(this.anim * 1.57)) * 3) : 0; drawShadow(this.x, 20); g.drawImage(f, Math.round(this.x - f.ax), Math.round(this.y - f.ay) + bob); }
+  draw() { WK.hzDraw(this, 'pig', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
   onBounce() { return WK.hzOn(this, 'pig', 'bounce'); }   // 밟으면 꿀꿀 · 등을 디딤돌 삼아 튀어 오름
   onShot(s) { return WK.hzOn(this, 'pig', 'shot', s.x, s.y); }
 }
@@ -1038,35 +949,7 @@ class BeatBar { // 할망 비트에 맞춰 땅에서 솟는 주상절리 기둥 
   get b() { return this.clock(); }
   update(dt) { this.bNow = this.b; return WK.hzUpdate(this, 'beatBar', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
   boxes() { return WK.hzBoxes(this, 'beatBar'); }
-  draw() {
-    const x = Math.round(this.x);
-    if (!this.up) {
-      // 예고: 땅에 육각 테두리 + 박자마다 금빛으로 뛰는 테 + 솟기 직전 벌어지는 금
-      const left = this.beatAt - this.b, f = ((this.b % 1) + 1) % 1, last = left < 1, beat = f < 0.22;
-      const k = clamp(1 - left / 2, 0, 1), rim = last ? (Math.floor(this.t * 20) % 2 ? C.org[3] : C.yel[3]) : beat ? C.yel[2] : mix(C.yel[0], C.soil[2], 0.4);
-      g.fillStyle = 'rgba(30,16,14,0.35)'; g.fillRect(x - 5, GROUND, 11, 2);
-      g.fillStyle = INK; g.fillRect(x - 5, GROUND - 1, 11, 1); g.fillRect(x - 5, GROUND + 2, 11, 1); g.fillRect(x - 7, GROUND, 2, 2); g.fillRect(x + 6, GROUND, 2, 2);
-      g.fillStyle = rim; g.fillRect(x - 4, GROUND - 1, 9, 1); g.fillRect(x - 4, GROUND + 2, 9, 1); g.fillRect(x - 6, GROUND, 1, 2); g.fillRect(x + 6, GROUND, 1, 2);
-      g.fillStyle = INK; const n = Math.ceil(this.crack.length / 2 * k);
-      for (let s = 0; s < 2; s++) for (let i = 0; i < n; i++) { const [cx, cy] = this.crack[s * 7 + i]; g.fillRect(x + (cx > 0 ? 6 : -6) + cx, GROUND + cy, 1, 1); }
-      if (left < 0.5) { const jy = Math.floor(this.t * 30) % 2; if (this.ch) g.drawImage(this.spr, 0, 6, this.spr.width, 4, Math.round(x - this.spr.width / 2) + jy, GROUND - 3, this.spr.width, 4); else g.drawImage(this.spr, 0, 0, this.spr.width, 4, x - 7 + jy, GROUND - 3, this.spr.width, 4); }
-      return;
-    }
-    if (this.h <= 0) return;
-    if (this.ch) {   // 글자: 땅 선 아래는 가려 땅속에서 나오고 들어가는 것처럼 · 떠 있는 동안 땅에 그림자
-      const sx = Math.round(x - this.spr.width / 2);
-      if (this.lifted > 0) { const sw = Math.round(clamp(9 - (this.gap - 7) * 0.25, 5, 9)); g.fillStyle = `rgba(30,16,14,${0.38 * this.lifted * clamp(1.2 - this.gap / 30, 0.4, 1)})`; g.fillRect(x - sw, GROUND - 1, sw * 2 + 1, 2); g.fillRect(x - sw + 2, GROUND + 1, sw * 2 - 3, 1); }   // 그림자: 높이 뛸수록 작고 옅게
-      g.save(); g.beginPath(); g.rect(sx - 2, -VOFF, this.spr.width + 4, GROUND + VOFF + 1); g.clip();
-      g.drawImage(this.spr, sx, this.top);
-      if (this.acc && this.upT < 0.06) { g.globalAlpha = 0.7; g.drawImage(silOf(this.spr, '#fff4d8'), sx, this.top); g.globalAlpha = 1; }   // 강세 글자: 솟는 순간 하얗게 번쩍
-      g.restore();
-      light(this.x, this.top + 10, 14, '#ffd890', this.upT < 0.16 ? 0.5 : 0.2);
-      return;
-    }
-    else { const hh = Math.min(this.spr.height, this.h); g.drawImage(this.spr, 0, 0, this.spr.width, hh, x - 7, GROUND - hh, this.spr.width, hh); }
-    if (this.upT < 0.16) { g.globalAlpha = 0.6; g.fillStyle = C.yel[3]; g.fillRect(x - 4, GROUND - this.h + 2, 9, 2); g.globalAlpha = 1; }   // 솟는 순간 윗면 금빛
-    light(this.x, GROUND - this.h, 14, '#ffd890', this.upT < 0.16 ? 0.5 : 0.2);
-  }
+  draw() { this.bNow = this.b; WK.hzDraw(this, 'beatBar', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 // ── 할망 시그니처 2: 태풍 마이삭 — 땅을 기어 오는 소용돌이, 플레이어를 끌어당김 ──
 class Vortex { // 태풍 마이삭: 땅에서 말려 올라가 깔때기가 된 뒤 기어 옴
@@ -1075,15 +958,6 @@ class Vortex { // 태풍 마이삭: 땅에서 말려 올라가 깔때기가 된 
   boxes() { return WK.hzBoxes(this, 'vortex'); }
   // 번개 모양 (Rust가 번개 칠 때 부름): 내려올수록 깔때기 쪽으로 모여 끝이 옆으로 꺾이지 않게
   makeBolt() { this.boltPts = []; let bx = this.x + rand(-30, 30); for (let y = -VOFF; y < GROUND - 60; y += 6) { const u = (y + VOFF) / (GROUND - 60 + VOFF); bx += rand(-5, 5) + (this.x - bx) * u * 0.4; this.boltPts.push([Math.round(bx), y]); } this.boltPts.push([Math.round(this.x), GROUND - 60]); }
-  debris(front) {
-    const cx = this.x;
-    for (let i = 0; i < 6; i++) {
-      const a = this.spin * (1.1 + i * 0.07) + i * 1.05, depth = Math.sin(a); if ((depth > 0) !== front) continue;
-      const y = GROUND - 8 - i * 5, r = 6 + i * 2.2, px = Math.round(cx + Math.cos(a) * r), py = Math.round(y + depth * 2);
-      if (i % 3 === 0) { g.save(); if (!front) g.globalAlpha = 0.6; g.drawImage(i % 2 ? TANGERINE : PEBBLE, px - 4, py - 4); g.restore(); }
-      else { g.fillStyle = front ? (i % 2 ? C.leaf[3] : C.wood[2]) : C.leaf[1]; g.fillRect(px, py, 2, 1); g.fillRect(px + (i % 2 ? 1 : 0), py - 1, 1, 1); }
-    }
-  }
   // 깔때기 그림 (매 프레임 픽셀로): 먹구름 바닥에서 내려온 깔때기 — 아래는 가는 밧줄, 위로 갈수록 넓은 쐐기 · 가장자리는 반투명하게 흩어지고
   //  나선 줄무늬가 위로 감겨 올라감 · 아래쪽은 들려 올라간 흙빛 · 땅엔 회오리치는 흙먼지 구름 · 꼭대기는 천천히 도는 먹구름 덩이
   funnelImg(form) {
@@ -1095,16 +969,7 @@ class Vortex { // 태풍 마이삭: 땅에서 말려 올라가 깔때기가 된 
     this.cx2.putImageData(this.id, 0, 0);
     return [this.cv, ox, oy];
   }
-  draw() {
-    const cx = this.x, form = clamp(this.t / this.formT, 0, 1);
-    if (this.bolt > 0 && this.boltPts) { for (let i = 0; i < this.boltPts.length - 1; i++) { pxLine(this.boltPts[i][0], this.boltPts[i][1], this.boltPts[i + 1][0], this.boltPts[i + 1][1], 3, '#a8b8ff'); pxLine(this.boltPts[i][0], this.boltPts[i][1], this.boltPts[i + 1][0], this.boltPts[i + 1][1], 1, '#fff4e0'); } light(cx, GROUND - 60, 30, '#c8d4ff', 0.8); }
-    if (form < 1) {   // 예고: 땅에 소용돌이 고리가 말려 들어감
-      g.fillStyle = INK; for (let a = 0; a < 6.28; a += 0.3) { const r = 14 * (1 - form) + 4; g.fillRect(Math.round(cx + Math.cos(a + this.spin) * r), GROUND + Math.round(Math.sin(a + this.spin) * 1.5), 1, 1); }
-    }
-    this.debris(false);
-    const [img, ox, oy] = this.funnelImg(form); g.drawImage(img, ox, oy);
-    this.debris(true);
-  }
+  draw() { WK.hzDraw(this, 'vortex', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 Vortex.PAL = ['#2c3038', '#3e434e', '#545a66', '#6c727e', '#888e96', '#a8acb0', '#c8c8c2'].map(c => mute(c));   // 깔때기 (빗물 머금은 회색)
 Vortex.DUST = ['#3a2f28', '#524236', '#6c5746', '#88705a', '#a48b70', '#bea688'].map(c => mute(c));   // 들려 올라간 흙먼지 (짙은 흙빛 → 빛 받은 먼지)
@@ -1124,15 +989,7 @@ class SubSlam {
   constructor(x, label) { this.x = x; this.spr = subButton(label); this.sprW = this.spr.width; this.sprH = this.spr.height; this.y = -VOFF - 20; this.t = 0; this.warn = 0.55 * G.speed; this.state = 'warn'; this.dodged = false; this.label = label; }
   update(dt) { return WK.hzUpdate(this, 'subSlam', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
   boxes() { return WK.hzBoxes(this, 'subSlam'); }
-  draw() {
-    const w = this.spr.width;
-    // 그림자 예고: 떨어질수록 진해짐
-    const k = this.state === 'warn' ? this.t / this.warn : 1;
-    g.fillStyle = `rgba(30,16,14,${0.2 + 0.4 * k})`; g.fillRect(Math.round(this.x - w / 2 * (0.5 + 0.5 * k)), GROUND, Math.round(w * (0.5 + 0.5 * k)), 2);
-    if (this.state === 'warn' && Math.floor(this.t * 12) % 2 === 0) { g.fillStyle = C.red[2]; g.fillRect(Math.round(this.x - 1), GROUND - 10, 2, 6); g.fillRect(Math.round(this.x - 1), GROUND - 3, 2, 2); }
-    if (this.state === 'warn') topMark(this.x, this.t);
-    if (this.state !== 'warn') { const q = this.state === 'hold' ? this.holdT / G.speed : 1, dip = q < 0.05 ? 2 : q < 0.1 ? 1 : 0; g.drawImage(this.spr, Math.round(this.x - w / 2), Math.round(this.y) + dip); if (q < 0.05) { g.globalAlpha = 0.7; g.drawImage(silOf(this.spr, '#fff4e0'), Math.round(this.x - w / 2), Math.round(this.y) + dip); g.globalAlpha = 1; } }   // 쾅 박힐 때 살짝 눌렸다 올라오고 하얗게 번쩍
-  }
+  draw() { WK.hzDraw(this, 'subSlam', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 // 높이 뛴 숨비에게: 위에서 떨어질 자리를 화면 위 끝에 표시
 function topMark(x, t) {
@@ -1150,63 +1007,14 @@ class AreaSmash {
   constructor(x0, x1, delay) { this.x0 = x0; this.x1 = x1; this.delay = delay; this.t = 0; this.dodged = false; this.hitT = -1; this.y = -VOFF - 24; this.hy = -VOFF + 14; }   // hy: 매달린 높이 (Rust가 매 프레임 계산)
   update(dt) { return WK.hzUpdate(this, 'areaSmash', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
   boxes() { return WK.hzBoxes(this, 'areaSmash'); }
-  drawCrates(y, shakeX = 0) {
-    const cs = crateSprite();
-    for (let x = this.x0; x < this.x1 - 4; x += cs.width) g.drawImage(cs, Math.round(Math.min(x, this.x1 - cs.width) + shakeX), Math.round(y));
-  }
-  draw() {
-    const w = this.x1 - this.x0;
-    if (this.hitT < 0) {
-      // 예고: 화면 위에 매달린 귤 상자(점점 흔들림) + 땅엔 짙어지는 그림자와 공사 띠 + 양 끝 꺾쇠
-      const k = clamp(this.t / this.delay, 0, 1), fast = k > 0.7, blink = fast ? Math.floor(this.t * 16) % 2 : Math.floor(this.t * 5) % 2;
-      // 구역 가장자리: 얇은 세로 점선 (높이 뛴 숨비도 경계를 보게)
-      g.fillStyle = `rgba(232,150,90,${0.18 + 0.3 * k})`;
-      for (let y = -VOFF + 36; y < GROUND - 8; y += 6) { g.fillRect(this.x0, y, 1, 3); g.fillRect(this.x1 - 1, y, 1, 3); }
-      // 땅 그림자: 상자가 내려올수록 진하고 넓게
-      const sw = Math.round(w * (0.6 + 0.4 * k)), sx = Math.round(this.x0 + (w - sw) / 2);
-      g.fillStyle = `rgba(30,16,14,${0.12 + 0.4 * k})`; g.fillRect(sx, GROUND, sw, 2); g.fillRect(sx + 3, GROUND - 1, sw - 6, 1);
-      // 땅속 공사 띠 (사선 줄무늬가 흐름)
-      const off = Math.floor(this.t * 24);
-      for (let x = this.x0 + 1; x < this.x1 - 1; x++) { g.fillStyle = (((x + off) >> 2) % 2) ? C.org[3] : INK; g.fillRect(x, GROUND + 3, 1, 2); }
-      // 양 끝 꺾쇠
-      for (const [ex, s] of [[this.x0, 1], [this.x1 - 1, -1]]) {
-        g.fillStyle = INK; g.fillRect(ex - 1, GROUND - 9, 3, 10); g.fillRect(ex, GROUND - 10, s * 5 + (s < 0 ? 1 : 0), 3);
-        g.fillStyle = blink ? C.yel[3] : C.org[3]; g.fillRect(ex, GROUND - 8, 1, 8); g.fillRect(Math.min(ex, ex + s * 4), GROUND - 9, 4, 1);
-      }
-      // 매달린 상자 + 밧줄
-      const hy = this.hy, sh = fast ? (Math.floor(this.t * 30) % 2 ? 1 : -1) : 0, cs = crateSprite();
-      g.fillStyle = C.wood[1];
-      for (let x = this.x0; x < this.x1 - 4; x += cs.width) { const cx = Math.round(Math.min(x, this.x1 - cs.width)); g.fillRect(cx + 5 + sh, -VOFF, 1, hy + VOFF + 3); g.fillRect(cx + cs.width - 6 + sh, -VOFF, 1, hy + VOFF + 3); }
-      this.drawCrates(hy, sh);
-      return;
-    }
-    // 내리꽂힘: 위로 바람 자국
-    if (!this.landed) { g.fillStyle = 'rgba(255,244,224,0.45)'; for (let x = this.x0 + 3; x < this.x1; x += 7) g.fillRect(x, Math.round(this.y - 16 - (x % 3) * 4), 1, 12); }
-    this.drawCrates(this.y);
-  }
+  draw() { WK.hzDraw(this, 'areaSmash', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 // ── 뭐랭하멘 [해석 레이저]: 가는 빨간 선으로 예고 → 화면을 가로지르는 광선 ──
 class Laser {
   constructor(y, delay, x1, x0 = 0) { this.y = y; this.delay = delay; this.x1 = x1; this.x0 = x0; this.from = x0 > 0 ? x0 : x1; this.t = 0; this.dodged = false; }
   update(dt) { return WK.hzUpdate(this, 'laser', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
   boxes() { return WK.hzBoxes(this, 'laser'); }
-  draw() {
-    if (!this.fired) {
-      const k = clamp(this.t / this.delay, 0, 1), x0 = this.x0, w = this.x1 - x0, y = this.y, half = Math.round(1 + k * 3), rev = this.from === x0;
-      g.save(); g.globalAlpha = 0.12 + 0.24 * k; g.fillStyle = C.red[2]; g.fillRect(x0, y - half, w, half * 2 + 1); g.restore();   // 점점 두꺼워지는 위험 띠
-      g.fillStyle = mix(C.red[2], '#fff4e0', k * 0.7); g.fillRect(x0, y, w, 1);                                                    // 가운데 선
-      for (let i = 0; i < 3; i++) { const d = (this.t * 220 + i * w / 3) % w, px = Math.round(rev ? x0 + d : x0 + w - d); g.fillStyle = '#fff4e0'; g.fillRect(px - 3, y, 6, 1); }   // 나아갈 방향으로 흐르는 빛
-      disc(g, Math.round(this.from), y, Math.round(1 + k * 3), mix(C.red[3], '#fff4e0', k));                                           // 발사 지점에 모이는 빛
-      if (this.delay - this.t < 0.12 * G.speed) { g.fillStyle = '#fff4e0'; g.fillRect(x0, y - 1, w, 3); }                         // 발사 직전 번쩍
-      return;
-    }
-    const f = Math.floor(this.t * 30) % 2;
-    const x0 = this.x0, w = this.x1 - x0;
-    g.fillStyle = C.red[1]; g.fillRect(x0, this.y - 4, w, 8);
-    g.fillStyle = C.red[3]; g.fillRect(x0, this.y - 3 + f, w, 6 - f * 2);
-    g.fillStyle = '#fff4e0'; g.fillRect(x0, this.y - 1, w, 2);
-    for (let x = x0; x < this.x1; x += 40) light(x, this.y, 20, '#ff8070', 0.5);
-  }
+  draw() { WK.hzDraw(this, 'laser', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 // 이벤트 공격 속도 보정: 세계 시간이 G.speed배로 흐르므로, 실제 체감 속도가 ×1.3을 넘지 않게 줄임
 const evK = () => Math.min(1, 1.3 / G.speed);
@@ -1398,11 +1206,9 @@ class Gull {
   }
   update(dt) { return WK.hzUpdate(this, 'gull', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_air.rs
   boxes() { return WK.hzBoxes(this, 'gull'); }
-  drawDecal() { const k = Math.max(0, this.t) / this.T;
-    if (k < 0.45) { g.globalAlpha = 1 - k / 0.45; for (let s = Math.max(0.08, k); s < 0.92; s += 0.04) { const x = Math.round(lerp(this.sx, this.tx + this.dir * 190, s)), y = Math.round(this.sy + (GROUND - 10 - this.sy) * (1 - Math.pow(2 * s - 1, 2))); if (y < -VOFF + 30) continue; g.fillStyle = INK; g.fillRect(x - 1, y - 1, 3, 3); g.fillStyle = C.red[3]; g.fillRect(x, y, 1, 1); } g.globalAlpha = 1; }
-    if (k < 0.7) { const a = 0.15 + Math.min(1, k / 0.4) * 0.3; g.fillStyle = `rgba(30,20,40,${a})`; g.fillRect(Math.round(this.tx - 40), GROUND, 80, 1); g.fillStyle = `rgba(200,40,40,${a})`; g.fillRect(Math.round(this.tx - 6), GROUND, 12, 1); } }
+  drawDecal() { WK.hzDraw(this, 'gull', 1); }
   onShot() { return WK.hzOn(this, 'gull', 'shot'); }
-  draw() { const f = GULL[[0, 0, 1, 1, 1, 0][Math.floor(this.anim) % 6]][this.dir > 0 ? 'r' : 'l']; g.drawImage(f, Math.round(this.x - f.ax), Math.round(this.y - f.ay)); }
+  draw() { WK.hzDraw(this, 'gull', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 class PatGull extends Pattern {
   constructor() { super(7.5); this.next = 0.4; }
@@ -1426,7 +1232,7 @@ class RentCar {
   update(dt) { return WK.hzUpdate(this, 'rentcar', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_ground.rs
   boxes() { return WK.hzBoxes(this, 'rentcar'); }
   onShot(s) { return WK.hzOn(this, 'rentcar', 'shot', s.x, s.y); }
-  draw() { const c = RENTCAR[this.dir > 0 ? 'r' : 'l']; drawShadow(this.x, 28); g.drawImage(c, Math.round(this.x - 16), Math.round(GROUND - 17)); }
+  draw() { WK.hzDraw(this, 'rentcar', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 class PatCar extends Pattern {
   constructor() { super(7.5); this.next = 0.3; }
@@ -1447,7 +1253,7 @@ class Bee {
   update(dt) { return WK.hzUpdate(this, 'bee', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_air.rs
   boxes() { return WK.hzBoxes(this, 'bee'); }
   onShot() { return WK.hzOn(this, 'bee', 'shot'); }
-  draw() { const f = BEE[Math.floor(this.t * 18) % 2][this.dir > 0 ? 'r' : 'l']; g.drawImage(f, Math.round(this.x - f.ax), Math.round(this.y - f.ay)); }
+  draw() { WK.hzDraw(this, 'bee', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 class PatBee extends Pattern {
   constructor() { super(7.5); this.next = 0.5; this.dir = pick([-1, 1]); }
@@ -1468,23 +1274,7 @@ class Plane {   // 참새 무리 (낮게 2마리 · 높게 3마리 — 판정 �
   update(dt) { return WK.hzUpdate(this, 'plane', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_air.rs
   boxes() { return WK.hzBoxes(this, 'plane'); }
   onShot(s) { return WK.hzOn(this, 'plane', 'shot', s.x, s.y); }
-  drawBirds(sil) {
-    const set = SPARROW[this.dir > 0 ? 'r' : 'l'];
-    for (const b of this.birds) {
-      const f = set[Math.floor(this.t * 14 + b.ph * 3) % 4], bob = Math.round(Math.sin(this.t * 7 + b.ph) * 1.2) + (this.flee ? -Math.round(b.ox * 0.4) : 0);
-      g.drawImage(sil ? silOf(f, C.red[2]) : f, Math.round(this.x + b.ox * this.dir - f.ax), Math.round(this.y + b.oy + bob - f.ay));
-    }
-  }
-  draw() {
-    if (this.t < this.warn) {   // 예고: 지나갈 높이에 점선 + 참새 그림자
-      if (this.t < this.warn - 0.7 * G.speed) return;
-      { const ly = Math.round(this.y); for (let x = 2; x < W; x += 6) { g.fillStyle = INK; g.fillRect(x - 1, ly - 1, 5, 3); g.fillStyle = C.red[3]; g.fillRect(x, ly, 3, 1); } }
-      if (!(Math.floor(this.t * 10) % 2)) { const x0 = this.x; this.x = this.dir > 0 ? 20 : W - 20; g.save(); g.globalAlpha = 0.6; this.drawBirds(true); g.restore(); this.x = x0; }
-      return;
-    }
-    if (this.low && !this.flee) drawShadow(this.x, 20);
-    this.drawBirds(false);
-  }
+  draw() { WK.hzDraw(this, 'plane', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 class PatPlane extends Pattern {
   constructor() { super(7.5); this.next = 0.4; }
@@ -1505,12 +1295,7 @@ class Parcel {
   kill() { WK.hzOn(this, 'parcel', 'stomp'); }
   boxes() { return WK.hzBoxes(this, 'parcel'); }
   onShot() { return WK.hzOn(this, 'parcel', 'shot'); }
-  draw() {
-    const k = this.state === 'warn' ? this.t / this.warn : 1;
-    g.fillStyle = `rgba(30,16,14,${0.2 + 0.4 * k})`; g.fillRect(Math.round(this.x - 4 - 4 * k), GROUND, Math.round(8 + 8 * k), 2);
-    if (this.state === 'warn') topMark(this.x, this.t);
-    if (this.state !== 'warn') { const thru = this.state === 'rest' && Math.abs(P.x - this.x) < 12 && P.y > this.y; if (thru) g.globalAlpha = 0.6; const dip = this.state === 'rest' && this.restT < 0.05 ? 2 : this.state === 'rest' && this.restT < 0.1 ? 1 : 0; g.drawImage(PARCEL, Math.round(this.x - 9), Math.round(this.y - 1) + dip); g.globalAlpha = 1; }
-  }
+  draw() { WK.hzDraw(this, 'parcel', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 class PatParcel extends Pattern {
   constructor() { super(7); this.next = 0.6; }
@@ -1532,11 +1317,7 @@ class Glider {
   update(dt) { return WK.hzUpdate(this, 'glider', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_air.rs
   boxes() { return WK.hzBoxes(this, 'glider'); }
   onBounce() { return WK.hzOn(this, 'glider', 'bounce'); }
-  draw() {
-    const sq = this.sq > 0 ? 1 : 0; this.sq = Math.max(0, (this.sq || 0) - 1 / 120);
-    g.save(); g.globalAlpha = this.life < 1 && Math.floor(this.life * 10) % 2 ? 0.4 : 1;
-    g.drawImage(GLIDER, Math.round(this.x - 15), Math.round(this.y - 12 + sq)); g.restore();
-  }
+  draw() { WK.hzDraw(this, 'glider', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 class PatGlider extends Pattern {
   constructor() { super(7.5); this.next = 0.2; this.gl = 0; this.dir = pick([-1, 1]); this.high = Math.random() < 0.5; }
@@ -1566,29 +1347,11 @@ function splashFx(x, big = 1) {
 }
 class Dolphin {
   constructor(x0, x1, peak, T, warn) { Object.assign(this, { x0, x1, peak, T, warn, t: 0, dodged: false, s: -1 }); this.dir = Math.sign(x1 - x0); this.x = x0; this.y = GROUND + 10; }
-  pos(s) { return [lerp(this.x0, this.x1, s), GROUND + 10 - (this.peak + 10) * 4 * s * (1 - s)]; }
   update(dt) { return WK.hzUpdate(this, 'dolphin', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_air.rs
   boxes() { return WK.hzBoxes(this, 'dolphin'); }
   onShot(sh) { return WK.hzOn(this, 'dolphin', 'shot', sh.x, sh.y); }
-  drawDecal() {
-    // 지나갈 길: 처음엔 또렷한 점선, 뛰어오르면 남은 길만 옅게
-    const s0 = Math.max(0, this.s), on = this.s < 0;
-    if (on || s0 < 0.6) for (let s = s0; s <= 1.001; s += 0.045) {
-      const [x, y] = this.pos(s); if (y > GROUND - 2) continue;
-      if (on) { g.fillStyle = INK; g.fillRect(Math.round(x) - 1, Math.round(y) - 1, 3, 3); }
-      g.fillStyle = on ? C.red[3] : 'rgba(232,69,74,0.35)'; g.fillRect(Math.round(x), Math.round(y), 1, 1);
-    }
-    if (on) {   // 솟을 자리 · 떨어질 자리: 물결 고리가 조여 듦
-      const k = clamp(this.t / this.warn, 0, 1);
-      for (const ex of [this.x0, this.x1]) { const r = Math.round(10 - 6 * k); g.fillStyle = INK; g.fillRect(Math.round(ex - r - 1), GROUND - 1, 2 * r + 3, 3); g.fillStyle = Math.floor(this.t * 12) % 2 ? '#9ec2d4' : '#cfe4ec'; g.fillRect(Math.round(ex - r), GROUND, 2 * r + 1, 1); }
-    }
-  }
-  draw() {
-    if (this.s < 0) return;
-    const i = this.s < 0.38 ? 0 : this.s < 0.62 ? 1 : 2, f = (this.dir > 0 ? DOLPHIN : DOLPHIN_L)[i];
-    g.save(); g.beginPath(); g.rect(-60, -VOFF - 40, W + 120, GROUND + VOFF + 40); g.clip();
-    g.drawImage(f, Math.round(this.x - 13), Math.round(this.y - 9)); g.restore();
-  }
+  drawDecal() { WK.hzDraw(this, 'dolphin', 1); }
+  draw() { WK.hzDraw(this, 'dolphin', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 class PatDolphin extends Pattern {
   constructor() { super(7.5); this.next = 0.3; }
@@ -1612,21 +1375,8 @@ class Crow {
   update(dt) { return WK.hzUpdate(this, 'crow', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_air.rs
   boxes() { return WK.hzBoxes(this, 'crow'); }
   onShot() { return WK.hzOn(this, 'crow', 'shot'); }
-  frame() {
-    const S = this.bat ? BAT : CROW, set = (this.state === 'dive' ? this.vx : this.face) >= 0 ? S.r : S.l;
-    if (this.state === 'dive') return set[3];
-    return set[[0, 1, 2, 1][Math.floor(this.anim) % 4]];
-  }
-  drawDecal() {
-    if (this.state !== 'aim') return;
-    // 조준선: 따라다니는 동안은 옅게, 굳으면 붉은 점선이 빨라지게 깜빡 + 땅에 ×
-    if (!this.locked) { g.fillStyle = 'rgba(232,69,74,0.3)'; const dx = P.x - this.x, dy = Math.max(50, P.y - 10 - this.y), n = Math.hypot(dx, dy) / 6; for (let i = 1; i < n; i++) g.fillRect(Math.round(this.x + dx * i / n), Math.round(this.y + dy * i / n), 1, 1); return; }
-    const left = 0.9 * G.speed - this.t, blink = Math.floor(this.t * (left < 0.25 * G.speed ? 20 : 8)) % 2;
-    const n = Math.hypot(this.gx - this.x, GROUND - 4 - this.y) / 5;
-    for (let i = 1; i < n; i++) { const x = Math.round(lerp(this.x, this.gx, i / n)), y = Math.round(lerp(this.y, GROUND - 4, i / n)); g.fillStyle = INK; g.fillRect(x - 1, y - 1, 3, 3); g.fillStyle = blink ? C.yel[3] : C.red[3]; g.fillRect(x, y, 1, 1); }
-    const gx = Math.round(this.gx); g.fillStyle = INK; g.fillRect(gx - 3, GROUND - 1, 7, 3); g.fillStyle = C.red[3]; g.fillRect(gx - 2, GROUND, 5, 1); g.fillRect(gx, GROUND - 1, 1, 3);
-  }
-  draw() { const f = this.frame(); g.drawImage(f, Math.round(this.x - 9), Math.round(this.y - 7)); }
+  drawDecal() { WK.hzDraw(this, 'crow', 1); }
+  draw() { WK.hzDraw(this, 'crow', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 class PatCrow extends Pattern {
   constructor() { super(7.5); this.next = 0.3; }
@@ -1652,21 +1402,8 @@ class DialectWord {
   update(dt) { return WK.hzUpdate(this, 'dialect', dt); }   // 움직임 · 판정 · 맞았을 때는 wasm/src/hz_air.rs
   boxes() { return WK.hzBoxes(this, 'dialect'); }
   onShot(sh) { return WK.hzOn(this, 'dialect', 'shot', sh.x, sh.y); }
-  drawDecal() {
-    if (this.st !== 'warn') return;
-    const k = clamp(this.t / (this.land - this.fall), 0, 1), w = Math.round(this.w * (0.5 + 0.5 * k)), blink = Math.floor(this.t * (k > 0.7 ? 18 : 6)) % 2;
-    g.fillStyle = `rgba(30,16,14,${0.15 + 0.45 * k})`; g.fillRect(Math.round(this.x - w / 2), GROUND, w, 2); g.fillRect(Math.round(this.x - w / 2) + 3, GROUND - 1, w - 6, 1);
-    g.fillStyle = blink ? C.yel[3] : C.red[3]; for (const ex of [this.x - this.w / 2, this.x + this.w / 2 - 2]) g.fillRect(Math.round(ex), GROUND + 2, 2, 1);
-    if (k > 0.25) { g.save(); g.globalAlpha = 0.18 + 0.2 * k; g.drawImage(silOf(this.spr, C.red[2]), Math.round(this.x - this.w / 2), GROUND - this.h); g.restore(); }   // 떨어질 자리에 낱말 그림자
-    topMark(this.x - this.w / 2 + 3, this.t); topMark(this.x + this.w / 2 - 3, this.t);
-  }
-  draw() {
-    if (this.st === 'warn') return;
-    const sq = this.st === 'land' && this.lT < 0.08 ? 2 : 0, x = Math.round(this.x - this.w / 2), y = Math.round(this.y);
-    if (sq) g.drawImage(this.spr, x - 2, y + sq, this.w + 4, this.h - sq);   // 쿵: 살짝 찌그러짐
-    else g.drawImage(this.spr, x, y);
-    if (this.st === 'land') { g.fillStyle = INK; for (let k = 0; k < this.w; k += 5) g.fillRect(x + k, GROUND - 1 - ((k / 5) % 2), 3, 1); }   // 박힌 자리 금
-  }
+  drawDecal() { WK.hzDraw(this, 'dialect', 1); }
+  draw() { WK.hzDraw(this, 'dialect', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 class PatDialect extends Pattern {
   constructor() { super(7.5); this.next = 0.3; this.used = []; }
@@ -1692,17 +1429,7 @@ class SlashWave {
   constructor(x, high, speed, warn, dir = -1) { this.dir = dir; this.x = x; this.high = high; this.y = high ? GROUND - 28 : GROUND - 8; this.speed = speed; this.warn = warn; this.t = 0; this.dodged = false; }
   update(dt) { return WK.hzUpdate(this, 'slashWave', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
   boxes() { return WK.hzBoxes(this, 'slashWave'); }
-  draw() {
-    if (!this.go) {
-      if (Math.floor(this.t * 10) % 2) return;
-      const ly = Math.round(this.y), xa = this.dir < 0 ? 4 : this.x + 10, xb = this.dir < 0 ? this.x - 10 : W - 4; for (let x = xa; x < xb; x += 6) { g.fillStyle = INK; g.fillRect(x - 1, ly - 1, 5, 3); g.fillStyle = C.red[3]; g.fillRect(x, ly, 3, 1); }
-      return;
-    }
-    const hh = this.high ? 12 : 8, x = Math.round(this.x), y = Math.round(this.y), sp = slashSprite(hh)[this.dir < 0 ? 'l' : 'r'];
-    for (let k = 1; k <= 3; k++) { g.globalAlpha = 0.35 / k; g.drawImage(sp, x - 6 - this.dir * k * 6, y - hh - 1); } g.globalAlpha = 1;   // 잔상
-    g.drawImage(sp, x - 6, y - hh - 1);
-    light(x, y, 16, '#fff0c0', 0.5);
-  }
+  draw() { WK.hzDraw(this, 'slashWave', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 // 난도질: 땅에 칼자국이 번쩍인 뒤 커다란 칼이 꽂힘
 const BIG_KNIFE = SPR.BIG_KNIFE;
@@ -1710,34 +1437,8 @@ class KnifeDrop {   // 도마 난도질: 예고 → 하늘에서 칼날이 번�
   constructor(x, delay) { this.x = Math.round(x); this.delay = delay; this.t = 0; this.y = -VOFF - 34; this.vy = 380; this.st = 'warn'; this.dodged = false; this.cracks = Array.from({ length: 6 }, (_, i) => { const s = i < 3 ? -1 : 1, pts = []; let cx = 0, cy = 0; for (let k = 0; k < 4 + (i % 3); k++) { cx += s * randi(1, 3); cy = clamp(cy + randi(-1, 1), 0, 3); pts.push([cx, cy]); } return pts; }); }
   update(dt) { return WK.hzUpdate(this, 'knifeDrop', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
   boxes() { return WK.hzBoxes(this, 'knifeDrop'); }
-  drawDecal() {
-    if (this.st === 'stuck') {   // 꽂힌 자리 땅 갈라짐 (칼이 사라지며 함께 옅어짐)
-      const a = clamp(1 - (this.sT / G.speed - 0.35) / 0.25, 0, 1); if (a <= 0) return;
-      g.globalAlpha = a; g.fillStyle = INK; for (const pts of this.cracks) for (const [cx, cy] of pts) g.fillRect(this.x + cx, GROUND + cy, 1, 1);
-      g.fillStyle = 'rgba(30,16,14,0.45)'; g.fillRect(this.x - 6, GROUND, 13, 2); g.globalAlpha = 1;
-      return;
-    }
-    if (this.st !== 'warn') return;
-    const k = clamp(this.t / this.delay, 0, 1), on = Math.floor(this.t * (k > 0.7 ? 18 : 6)) % 2;
-    g.fillStyle = INK; g.fillRect(this.x - 4, GROUND - 1, 9, 3); g.fillStyle = on ? '#fff4e0' : C.red[3]; g.fillRect(this.x - 3, GROUND, 7, 1);
-    g.fillStyle = `rgba(232,69,74,${0.15 + 0.25 * k})`; for (let y = -VOFF + 40; y < GROUND - 4; y += 5) g.fillRect(this.x, y, 1, 2);
-    topMark(this.x, this.t);
-  }
-  draw() {
-    if (this.st === 'warn') {   // 떨어지기 직전: 화면 위에서 칼날이 번뜩
-      const left = this.delay - this.t; if (left > 0.12 * G.speed) return;
-      g.drawImage(BIG_KNIFE, this.x - 5, -VOFF - 20 - Math.round(left / G.speed * 30)); if (Math.floor(this.t * 30) % 2) { g.fillStyle = '#fff4e0'; g.fillRect(this.x - 2, -VOFF + 4, 3, 1); g.fillRect(this.x - 1, -VOFF + 3, 1, 3); }
-      return;
-    }
-    if (this.st === 'fall') {   // 잔상 · 속도선
-      g.save(); for (let i = 1; i <= 2; i++) { g.globalAlpha = 0.28 / i; g.drawImage(BIG_KNIFE, this.x - 5, Math.round(this.y - 8 - i * this.vy * 0.012)); } g.restore();
-      g.fillStyle = 'rgba(255,244,224,0.55)'; g.fillRect(this.x - 4, Math.round(this.y - 30), 1, 18); g.fillRect(this.x + 4, Math.round(this.y - 24), 1, 12);
-      g.drawImage(BIG_KNIFE, this.x - 5, Math.round(this.y - 8)); return;
-    }
-    const q = this.sT / G.speed, wob = q < 0.28 ? (Math.floor(this.sT * 40) % 2 ? 1 : -1) * (q < 0.14 ? 1 : 0.5) : 0, sink = q < 0.05 ? 2 : q < 0.1 ? 1 : 0;   // 꽂힌 칼이 부르르 떨다 멎음 · 꽂히는 순간 깊이 박혔다 살짝 올라옴
-    g.save(); if (q > 0.4) g.globalAlpha = 0.5; g.drawImage(BIG_KNIFE, this.x - 5 + Math.round(wob), Math.round(this.y - 8 + sink)); g.restore();
-    if (q < 0.06) { g.globalAlpha = 0.8; g.drawImage(silOf(BIG_KNIFE, '#fff4e0'), this.x - 5, Math.round(this.y - 8 + sink)); g.globalAlpha = 1; }   // 꽂히는 순간 칼이 하얗게 번쩍
-  }
+  drawDecal() { WK.hzDraw(this, 'knifeDrop', 1); }
+  draw() { WK.hzDraw(this, 'knifeDrop', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 const SMALL_KNIFE = SPR.SMALL_KNIFE;   // 뒤집은 그림은 .flip
 
@@ -1749,42 +1450,14 @@ class WaterFall {
   constructor(x, delay) { this.x = Math.round(x); this.delay = delay; this.t = 0; this.dodged = false; this.dur = 0.32 * G.speed; }
   update(dt) { return WK.hzUpdate(this, 'waterFall', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
   boxes() { return WK.hzBoxes(this, 'waterFall'); }
-  drawDecal() {
-    if (this.t >= this.delay) return;
-    const k = this.t / this.delay, w = Math.round(8 + 10 * k);
-    g.fillStyle = `rgba(46,90,122,${0.2 + 0.4 * k})`; g.fillRect(this.x - (w >> 1), GROUND, w, 2);   // 젖어 가는 땅
-    g.fillStyle = WATER[3]; if (Math.floor(this.t * 12) % 2) g.fillRect(this.x - (w >> 1), GROUND - 1, w, 1);
-    topMark(this.x, this.t);
-  }
-  draw() {
-    if (!this.poured) return;
-    const k = (this.t - this.delay) / this.dur, hw = Math.max(2, Math.round(9 * (k < 0.7 ? 1 : (1 - k) / 0.3))), top = -VOFF + 36, off = Math.floor(this.t * 260) % FALL_TILE.height;
-    // 물줄기: 결 무늬가 아래로 흐름 · 끝날 땐 가늘어짐 · 바깥 먹선 1px로 다른 스프라이트와 같은 결
-    g.fillStyle = mix(WATER[0], INK, 0.5); g.fillRect(this.x - hw - 1, top, 1, GROUND - top); g.fillRect(this.x + hw + 1, top, 1, GROUND - top);
-    for (let y = top - off; y < GROUND; y += FALL_TILE.height) {
-      const y0 = Math.max(top, y), y1 = Math.min(GROUND, y + FALL_TILE.height);
-      g.drawImage(FALL_TILE, 9 - hw, y0 - y, hw * 2 + 1, y1 - y0, this.x - hw, y0, hw * 2 + 1, y1 - y0);
-    }
-    // 위: 물이 쏟아지는 물안개, 아래: 물보라 웅덩이
-    // 시작점은 물안개 구름 속에서 쏟아지게 (잘린 듯한 윗단을 가림)
-    for (let i = 0; i < 7; i++) { const a = i * 0.9 + this.t * 1.5, cx = Math.round(this.x + Math.cos(a) * (hw + 4)), cy = top + Math.round(Math.sin(a * 1.3) * 2); disc(g, cx, cy, 4 + (i % 3), mix(WATER[2], INK, 0.35)); }
-    for (let i = 0; i < 7; i++) { const a = i * 0.9 + this.t * 1.5, cx = Math.round(this.x + Math.cos(a) * (hw + 4)), cy = top - 1 + Math.round(Math.sin(a * 1.3) * 2); disc(g, cx, cy, 3 + (i % 3), i % 2 ? WATER[3] : WATER[4]); }
-    g.fillStyle = WATER[2]; g.fillRect(this.x - hw - 6, GROUND - 2, hw * 2 + 13, 2); g.fillStyle = WATER[4]; g.fillRect(this.x - hw - 4, GROUND - 3, hw * 2 + 9, 1);
-    for (let i = 0; i < 6; i++) { const a = this.t * 9 + i; g.fillStyle = WATER[4]; g.fillRect(Math.round(this.x + Math.cos(a) * (hw + 5)), GROUND - 3 - Math.round(Math.abs(Math.sin(a)) * 8), 2, 2); }
-    light(this.x, GROUND - 30, 30, '#c8f0ff', 0.5);
-  }
+  drawDecal() { WK.hzDraw(this, 'waterFall', 1); }
+  draw() { WK.hzDraw(this, 'waterFall', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 class Ripple { // 땅을 타고 퍼지는 낮은 물결 (높이 10)
   constructor(x, dir, speed) { this.x = x; this.dir = dir; this.speed = speed; this.t = 0; this.dodged = false; }
   update(dt) { return WK.hzUpdate(this, 'ripple', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
   boxes() { return WK.hzBoxes(this, 'ripple'); }
-  draw() {
-    for (let k = 0; k < 16; k++) {
-      const hh = Math.round(k < 2 ? 10 * (k + 1) / 3 : 10 * Math.exp(-(k - 2) / 4.5)); if (hh < 1) continue;
-      const xx = Math.round(this.x - this.dir * k);
-      g.fillStyle = mix(WATER[0], INK, 0.5); g.fillRect(xx, GROUND - hh - 1, 1, 1); for (let j = 0; j < hh; j++) { g.fillStyle = j === 0 ? WATER[4] : j === 1 ? WATER[3] : j < hh * 0.6 ? WATER[2] : WATER[1]; g.fillRect(xx, GROUND - hh + j, 1, 1); }
-    }
-  }
+  draw() { WK.hzDraw(this, 'ripple', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 // 오름 스프라이트: 배경 오름과 같은 풀빛 팔레트 · 왼쪽 위 빛 · 비스듬한 풀 결 · 밑동 흙 · 큰 것은 꼭대기 분화구 (셀아웃 외곽선)
 const OREUM_SPR = {};
@@ -1794,48 +1467,15 @@ class OreumRise {
   constructor(x, delay, H) { this.x = Math.round(x); this.delay = delay; this.H = H; this.t = 0; this.h = 0; this.dodged = false; this.w = 14; }
   update(dt) { return WK.hzUpdate(this, 'oreumRise', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
   boxes() { return WK.hzBoxes(this, 'oreumRise'); }
-  drawDecal() {
-    if (this.up) return;
-    const k = clamp(this.t / this.delay, 0, 1), r = Math.round(6 + 8 * k);
-    g.fillStyle = INK; for (let i = -r; i <= r; i += 2) g.fillRect(this.x + i, GROUND + ((i >> 1) % 2 ? 1 : 0), 1, 1);   // 갈라지는 금
-    if (k > 0.5) { const bh = Math.round((k - 0.5) * 6); for (let dx = -10; dx <= 10; dx++) { const h = Math.round(bh * (1 - (dx / 10) ** 2)); if (h > 0) { g.fillStyle = C.leaf[2]; g.fillRect(this.x + dx, GROUND - h, 1, h); } } }   // 부풀어 오르는 땅
-  }
-  draw() {
-    if (this.h < 1) return;
-    // 통째로 땅을 뚫고 솟음: 스프라이트 전체가 아래에서 올라오고 땅선에서 잘림
-    const spr = oreumSprite(this.H), hh = Math.round(this.h), y = GROUND - hh;
-    g.save(); g.beginPath(); g.rect(this.x - spr.width, -VOFF, spr.width * 2, GROUND + VOFF); g.clip();
-    g.drawImage(spr, Math.round(this.x - spr.width / 2), y); g.restore();
-    if (hh < this.H) { for (let k = 0; k < 3; k++) { g.fillStyle = k % 2 ? C.soil[3] : C.soil[2]; g.fillRect(Math.round(this.x - spr.width / 2 + 4 + hash2(k, hh, 7) * (spr.width - 8)), GROUND - 1 - (k % 2), 2, 1); } }   // 솟는 동안 흙이 흘러내림
-  }
+  drawDecal() { WK.hzDraw(this, 'oreumRise', 1); }
+  draw() { WK.hzDraw(this, 'oreumRise', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 // 설문대 파도: 치마폭에서 일어난 큰 물결이 굴러옴 (낮으면 뛰어넘기, 높으면 구르기로 밑을 빠져나감 — 높은 파도는 바닥이 비어 있음)
 class TideWave {
   constructor(x, dir, speed, high, warn) { this.x = x; this.dir = dir; this.speed = speed; this.high = high; this.warn = warn; this.t = 0; this.dodged = false; }
   update(dt) { return WK.hzUpdate(this, 'tideWave', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
   boxes() { return WK.hzBoxes(this, 'tideWave'); }
-  draw() {
-    if (!this.go) {   // 예고: 지나갈 높이에 물빛 점선
-      if (Math.floor(this.t * 10) % 2) return;
-      const y0 = this.high ? GROUND - 30 : GROUND - 8, xa = this.dir < 0 ? 4 : this.x + 12, xb = this.dir < 0 ? this.x - 12 : W - 4;
-      for (let x = xa; x < xb; x += 6) { g.fillStyle = INK; g.fillRect(x - 1, y0 - 1, 5, 3); g.fillStyle = WATER[3]; g.fillRect(x, y0, 3, 1); }
-      return;
-    }
-    const hi = this.high, d = this.dir, x0 = Math.round(this.x), tt = this.t, T = TIDE, S = tideSprite(hi, Math.floor(tt * 12) % TIDE_FR, d), P0 = S.geo;
-    // 뒤로 남는 물결 자국: 땅선 위 거품 줄이 뒤처지며 옅어짐
-    for (let i = 0; i < 9; i++) { const k = ((tt * 1.6 + i / 9) % 1), ux = -P0.back - 2 - k * 46, len = Math.max(1, Math.round((1 - k) * 6)); g.globalAlpha = (1 - k) * 0.8; g.fillStyle = i % 3 ? T[5] : T[6]; g.fillRect(Math.round(x0 + d * ux) - (d < 0 ? 0 : len), GROUND - 1 - (i % 2), len, 1); }
-    g.globalAlpha = 1;
-    g.drawImage(S, x0 - (d > 0 ? S.ax : S.width - 1 - S.ax), GROUND - S.height + 1);
-    if (hi) {   // 아치 바닥 얕은 물 · 아치 천장에서 떨어지는 물줄기
-      for (let u = -12; u <= P0.uc; u++) { g.fillStyle = T[2]; g.fillRect(x0 + d * u, GROUND - 1, 1, 1); if ((u + Math.floor(tt * 14)) % 4 === 0) { g.fillStyle = T[5]; g.fillRect(x0 + d * u, GROUND - 1, 1, 1); } }
-      for (let i = 0; i < 5; i++) { const ph = (tt * 2.2 + i / 5) % 1, u = -10 + i * 4.5; g.fillStyle = i % 2 ? T[5] : T[4]; g.fillRect(Math.round(x0 + d * u), Math.round(GROUND - P0.gap + ph * (P0.gap - 2)), 1, 2); }
-    }
-    // 입술 끝에서 떨어지는 물방울 · 물마루 물보라
-    const tipX = x0 + d * P0.tip[0], tipY = GROUND - P0.tip[1];
-    for (let i = 0; i < 5; i++) { const ph = (tt * 2.6 + i / 5) % 1, fall = hi ? P0.tip[1] - P0.gap : P0.tip[1]; g.fillStyle = i % 2 ? T[5] : T[6]; g.fillRect(tipX + d * Math.round(ph * 3 - 1 + (i % 3)), Math.round(tipY + ph * ph * fall), 1, 2); }
-    for (let i = 0; i < 7; i++) { const a = tt * 9 + i * 1.9, r = 3 + (i % 3) * 2; g.fillStyle = i % 3 ? T[6] : T[5]; g.fillRect(x0 + d * Math.round(P0.uc - 2 + Math.cos(a) * r), GROUND - P0.H - 2 + Math.round(Math.sin(a) * 2.5) - (i % 2), 1, 1); }
-    light(this.x, GROUND - P0.H / 2, 26, '#c8f0ff', 0.45);
-  }
+  draw() { WK.hzDraw(this, 'tideWave', 0); }   // 그리기도 wasm/src/hz_*.rs (명령만 받아 찍음)
 }
 // 설문대 파도 그림 (구워 둔 칸 몇 장): 완만한 뒤 비탈 → 물마루 → 나선처럼 가늘어지며 앞으로 말려 내려오는 입술
 //  안쪽 관은 입술과 중심이 어긋난 짙은 타원 · 몸통 색은 수면을 따라 층이 지고(빛이 위에서 스며듦) 비탈엔 결 따라 흰 줄
@@ -1895,7 +1535,7 @@ class HopLand {
   constructor(x, w, T) { this.x = x; this.w = w; this.T = T; this.t = 0; this.dodged = false; }
   update(dt) { return WK.hzUpdate(this, 'hopLand', dt); }   // 움직임 · 판정은 wasm/src/hz_event.rs
   boxes() { return WK.hzBoxes(this, 'hopLand'); }
-  drawDecal() { const k = clamp(this.t / this.T, 0, 1), w = Math.round(this.w * (0.4 + 0.6 * k)); g.fillStyle = `rgba(30,16,14,${0.15 + 0.45 * k})`; g.fillRect(Math.round(this.x - w / 2), GROUND, w, 2); g.fillRect(Math.round(this.x - w / 2) + 3, GROUND - 1, w - 6, 1); if (k > 0.5 && Math.floor(this.t * 16) % 2) { g.fillStyle = C.red[3]; g.fillRect(Math.round(this.x - this.w / 2), GROUND + 2, 2, 1); g.fillRect(Math.round(this.x + this.w / 2) - 2, GROUND + 2, 2, 1); } }
+  drawDecal() { WK.hzDraw(this, 'hopLand', 1); }
   draw() {}
 }
 // ── 이벤트: 칼 든 하르방 — 칼바람, 난도질, 칼 던지기 ──

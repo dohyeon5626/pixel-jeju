@@ -9,6 +9,7 @@
 mod basalt;
 mod cave;
 mod cliff;
+mod draw;
 mod funnel;
 mod fx;
 mod game;
@@ -304,4 +305,20 @@ pub unsafe extern "C" fn hz_boxes(kind: usize, f: *const f64, n: usize, out: *mu
 #[no_mangle]
 pub unsafe extern "C" fn hz_on(kind: usize, f: *mut f64, n: usize, ev: i32, sx: f64, sy: f64) -> i32 {
     hz::KINDS[kind].on.map(|on| on(from_raw_parts_mut(f, n), ev, sx, sy) as i32).unwrap_or(0)
+}
+static mut DRAW_CMDS: Vec<f64> = Vec::new();
+// 장애물 그리기 (which 0: 그림 · 1: 땅에 먼저 깔리는 예고): f는 그리기 필드 목록대로 · 명령 수 (명령은 hz_cmds, 짜임은 draw.rs)
+#[no_mangle]
+pub unsafe extern "C" fn hz_draw(kind: usize, f: *mut f64, n: usize, which: i32) -> usize {
+    let k = &hz::KINDS[kind];
+    let mut d = draw::Draw::new();
+    if let Some(fun) = if which == 0 { k.draw } else { k.decal } {
+        fun(from_raw_parts_mut(f, n), &mut d);
+    }
+    DRAW_CMDS = d.q;
+    (*std::ptr::addr_of!(DRAW_CMDS)).len()
+}
+#[no_mangle]
+pub extern "C" fn hz_cmds() -> *const f64 {
+    unsafe { (*std::ptr::addr_of!(DRAW_CMDS)).as_ptr() }
 }
