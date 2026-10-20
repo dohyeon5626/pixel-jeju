@@ -482,6 +482,8 @@ function wordSprite(str, kind) {
   const t = textSprite(str, { font: 'b', color: col, outline: null });
   const w = t.width, h = t.height, src = t.getContext('2d').getImageData(0, 0, w, h).data;
   const on = (i, j) => i >= 0 && j >= 0 && i < w && j < h && src[(j * w + i) * 4 + 3] > 0;
+  let c = WK && WK.wordSprite(src, w, h, [edge, mix(edge, '#000000', 0.4), col, mix(col, edge, 0.2)]);   // WASM: wasm/src/text.rs word
+  if (!c) {
   const pb = new PB(w + 4, h + 6);
   for (let j = -2; j < h + 4; j++) for (let i = -2; i < w + 2; i++) {
     let ring = false, sh = false;
@@ -490,7 +492,9 @@ function wordSprite(str, kind) {
     if (ring) pb.set(i + 2, j + 2, edge); else if (sh) pb.set(i + 2, j + 2, mix(edge, '#000000', 0.4));
   }
   for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) if (on(i, j)) pb.set(i + 2, j + 2, j > h - 3 ? mix(col, edge, 0.2) : col);
-  const c = pb.canvas(); c.bodyH = c.height;
+  c = pb.canvas();
+  }
+  c.bodyH = c.height;
   wordCache.set(key, c);
   return c;
 }
