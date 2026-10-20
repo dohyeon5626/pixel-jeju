@@ -462,7 +462,8 @@ function cjMid4(ph) {
   const mask = []; for (let i = x0; i <= x1; i += 2) mask.push([i, ct(i)]); for (let i = x1; i >= x0; i -= 2) mask.push([i, base(i) + 1]);
   basaltWall(c, mask, x0 - 4, x1 + 4, 62, 128, 4203, { ramp: ['#16181a', '#22252a', '#30343a', '#40454a', '#545a5e', '#6c7276', '#888e90'].map(k => A(k, 0.18)), moss: 0.7, mossCols: ['#3a6430', '#4e7c3a'].map(k => A(k, 0.18)), warp: i => cxA + phi(i) / sPM * halfW });
   { const id = x.getImageData(0, 0, lw, 140), d = id.data;   // 휘어 든 면의 밝기: 해를 보는 오른쪽 벽은 밝게, 왼쪽 벽 · 가장 안쪽은 그늘 · 폭포 둘레는 물안개
-    for (let i = Math.max(0, x0); i < Math.min(lw, x1 + 1); i++) { const f = 1 + 0.26 * phi(i) / PM - 0.1 * dep(i); for (let y = ct(i) - 2; y <= base(i) + 1; y++) { const q = (y * lw + i) * 4; if (!d[q + 3]) continue; const mist = Math.max(0, 1 - Math.abs(i - cxA) / 34) * clamp((y - 86) / 26, 0, 1) * 0.3; for (let k = 0; k < 3; k++) d[q + k] = clamp(d[q + k] * f + (226 - d[q + k] * f) * mist, 0, 255); } }
+    const ia = Math.max(0, x0), ib = Math.min(lw, x1 + 1), F = [], Y0 = [], Y1 = []; for (let i = ia; i < ib; i++) { F.push(1 + 0.26 * phi(i) / PM - 0.1 * dep(i)); Y0.push(ct(i) - 2); Y1.push(base(i) + 1); }
+    if (!(WK && WK.cliffShade(d, lw, 140, ia, F, Y0, Y1, cxA))) for (let i = ia; i < ib; i++) { const f = F[i - ia]; for (let y = Y0[i - ia]; y <= Y1[i - ia]; y++) { const q = (y * lw + i) * 4; if (!d[q + 3]) continue; const mist = Math.max(0, 1 - Math.abs(i - cxA) / 34) * clamp((y - 86) / 26, 0, 1) * 0.3; for (let k = 0; k < 3; k++) d[q + k] = clamp(d[q + k] * f + (226 - d[q + k] * f) * mist, 0, 255); } }   // WASM: wasm/src/cliff.rs
     x.putImageData(id, 0, 0); }
   for (let i = x0; i <= x1; i++) { const b0 = base(i), t0 = b0 - 14 + Math.round(Math.sin(i * 0.04) * 2); for (let y = t0; y < b0; y++) { const k = (y - t0) / 14; if (k > 0.3 || (i + y) % 2) px1(x, A(k > 0.65 ? '#101214' : '#181a1e', 0.18), i, y); } }   // 물가 아래쪽 패인 그늘
   for (let k = 0; k < 16; k++) { const vx = x0 + 8 + Math.floor(R() * (x1 - x0 - 16)), vy = ct(vx) + 8 + Math.floor(R() * Math.max(4, base(vx) - ct(vx) - 22)); pixTree(x, vx, vy, 2 + R() * 2, GR, R, { blobs: 3 }); }
@@ -555,7 +556,7 @@ function cvCell(u, v, seed) {   // 보로노이: [가장자리까지 거리, 칸
 }
 function cvMask(w, h, pts) {   // 다각형 윤곽 → 칸 가림 (경계 반투명은 버림)
   const c = mkR(w, h), x = c.getContext('2d'); P_.poly(x, pts, '#fff'); const d = x.getImageData(0, 0, w, h).data, m = new Uint8Array(w * h);
-  for (let q = 0; q < w * h; q++) m[q] = d[q * 4 + 3] > 120 ? 1 : 0;
+  if (!(WK && WK.alphaMask(d, 120, m))) for (let q = 0; q < w * h; q++) m[q] = d[q * 4 + 3] > 120 ? 1 : 0;
   return m;
 }
 // 각진 현무암 덩이: 다각형 윤곽 + 면마다 다른 밝기 (빛 받는 면 · 그늘 면) · 면 사이 금 · 셀아웃 테
@@ -656,6 +657,10 @@ function caveWallData() {   // 먼 벽의 결(흐름선 · 선반 · 금 · 숨�
 function cavePassage(x, day) {
   const { cx, hw, top, bot } = CV.passage, vx = cx - 6, vy = bot - 26, ay = top + hw;
   const ox = cx - hw - 5, oy = top - 5, w = Math.min(W - ox, hw * 2 + 10), h = bot - top + 6, id = x.getImageData(ox, oy, w, h), d = id.data;
+  if (!(WK && WK.cavePassage(d, W))) cavePassagePx(d, w, h, ox, oy, cx, hw, top, bot, vx, vy, ay);
+  x.putImageData(id, ox, oy);
+}
+function cavePassagePx(d, w, h, ox, oy, cx, hw, top, bot, vx, vy, ay) {   // 픽셀 (WASM: wasm/src/cave.rs passage)
   const inside = (i, y) => { const dx = (i - cx) / hw; return Math.abs(dx) <= 1 && y < bot && y >= ay - Math.sqrt(1 - dx * dx) * (ay - top); };
   const SC = [1, 0.7, 0.48, 0.32, 0.2], inK = (i, y, k) => inside(vx + (i - vx) / SC[k], vy + (y - vy) / SC[k]);
   for (let yy = 0; yy < h; yy++) for (let ii = 0; ii < w; ii++) {
@@ -672,7 +677,6 @@ function cavePassage(x, day) {
     const ed = Math.hypot((i - vx) / (hw * 0.32), (y - vy - 6) / (hw * 0.28)), end = ed < 1 ? (ed < 0.5 ? 0.16 : 0.09) : 0;   // 굽이 너머에서 새어 드는 빛 (두 단계)
     cvPut(d, w, ii, yy, cvC(clamp(v + end, 0, 1), clamp(0.45 - k * 0.08 + end * 4, 0, 1)));
   }
-  x.putImageData(id, ox, oy);
 }
 
 // 용암석주 (오름 층 · 0.16배) — 천장 구멍에서 흘러내린 용암이 겹겹이 쌓여 굳은 기둥
