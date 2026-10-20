@@ -262,3 +262,31 @@ pub fn shaft(d: &mut [u8], lw: i32, sh: f64, lc: [u8; 3], a0: f64) {
         y += 1.0;
     }
 }
+
+// cavePassage: 오른쪽 끝 갈래 굴 — 안으로 갈수록 작아지며 어두워지는 아치 몇 겹 (d: 굴 둘레만 잘라 온 RGBA)
+pub fn passage(d: &mut [u8], scr_w: f64) {
+    let (cx, hw, top, bot) = (404.0, 28.0, 118.0, 183.0);
+    let vx = cx - 6.0; let vy = bot - 26.0; let ay = top + hw;
+    let ox = cx - hw - 5.0; let oy = top - 5.0; let w = min(scr_w - ox, hw * 2.0 + 10.0); let h = bot - top + 6.0;
+    let inside = |i: f64, y: f64| { let dx = (i - cx) / hw; dx.abs() <= 1.0 && y < bot && y >= ay - (1.0 - dx * dx).sqrt() * (ay - top) };
+    let sc = [1.0, 0.7, 0.48, 0.32, 0.2];
+    let in_k = |i: f64, y: f64, k: usize| inside(vx + (i - vx) / sc[k], vy + (y - vy) / sc[k]);
+    let wi = w as i32;
+    for yy in 0..h as i32 { for ii in 0..wi {
+        let i = ox + ii as f64; let y = oy + yy as f64;
+        if !inside(i, y) {   // 입구 테두리: 왼쪽은 등불빛, 오른쪽은 그늘
+            if [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (-2.0, 0.0), (2.0, 0.0), (0.0, -2.0)].iter().any(|&(a, b)| inside(i + a, y + b)) {
+                let (l, _) = light(i, y, 1.0);
+                put(d, wi, ii, yy, cvc(if i < cx { 0.36 + l * 0.4 } else { 0.16 }, if i < cx { clamp(l * 1.6, 0.0, 1.0) } else { 0.0 }));
+            }
+            continue;
+        }
+        let mut k = 0; while k < sc.len() - 1 && in_k(i, y, k + 1) { k += 1; }
+        let edge_l = !in_k(i - 1.0, y, k) || !in_k(i - 2.0, y, k); let edge_t = !in_k(i, y - 1.0, k); let fl = y > vy + (bot - vy) * sc[k] - 3.0;
+        let mut v = [0.27, 0.2, 0.14, 0.09, 0.06][k] + (vnoise(i * 0.2, y * 0.2, 7051.0) - 0.5) * 0.04;
+        if fl { v += 0.06; }
+        if edge_l && i > vx - 2.0 { v -= 0.05; } else if edge_l || edge_t { v += 0.07 * (1.0 - k as f64 * 0.18); }
+        let ed = hypot((i - vx) / (hw * 0.32), (y - vy - 6.0) / (hw * 0.28)); let end = if ed < 1.0 { if ed < 0.5 { 0.16 } else { 0.09 } } else { 0.0 };
+        put(d, wi, ii, yy, cvc(clamp(v + end, 0.0, 1.0), clamp(0.45 - k as f64 * 0.08 + end * 4.0, 0.0, 1.0)));
+    } }
+}

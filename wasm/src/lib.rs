@@ -2,11 +2,13 @@
 //  JS와 같은 그림이 나와야 해서 식 순서까지 원래 JS 그대로 옮김 (바꿀 땐 양쪽 다)
 mod basalt;
 mod cave;
+mod cliff;
 mod funnel;
 mod fx;
 mod js;
 mod noise;
 mod player;
+mod text;
 mod tree;
 
 use std::slice::{from_raw_parts, from_raw_parts_mut};
@@ -74,3 +76,28 @@ static mut PLAYER: [f64; 12] = [0.0; 12];
 #[no_mangle] pub extern "C" fn player_buf() -> *mut f64 { unsafe { std::ptr::addr_of_mut!(PLAYER) as *mut f64 } }
 #[no_mangle] pub extern "C" fn player_walk(vx: f64, dir: f64, on_ground: i32, speed_up: f64, dt: f64) -> f64 { player::walk(vx, dir, on_ground != 0, speed_up, dt) }
 #[no_mangle] pub unsafe extern "C" fn player_fall() { player::fall(&mut *std::ptr::addr_of_mut!(PLAYER)); }
+
+// 동굴 갈래 굴: d는 굴 둘레를 잘라 온 RGBA (w × h는 JS와 같은 식)
+#[no_mangle] pub unsafe extern "C" fn cave_passage(d: *mut u8, n: usize, scr_w: f64) { cave::passage(from_raw_parts_mut(d, n), scr_w); }
+
+// 천지연 절벽 밝기: 열 ia부터 n개 (f · y0 · y1)
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn cliff_shade(d: *mut u8, lw: i32, h: i32, ia: i32, n: usize, f: *const f64, y0: *const f64, y1: *const f64, cxa: f64) {
+    cliff::shade(from_raw_parts_mut(d, (lw * h * 4) as usize), lw, ia, from_raw_parts(f, n), from_raw_parts(y0, n), from_raw_parts(y1, n), cxa);
+}
+
+// 글자: a는 알파 (w × h) · cols는 RGB 묶음 · bb는 경계 상자 4칸
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn text_sprite(a: *const u8, w: i32, h: i32, d: *mut u8, ow: i32, oh: i32, outline: i32, shadow: i32, cols: *const u8, bb: *mut i32) {
+    let c = from_raw_parts(cols, 6);
+    text::sprite(from_raw_parts(a, (w * h) as usize), w, h, from_raw_parts_mut(d, (ow * oh * 4) as usize), ow, if outline != 0 { Some([c[0], c[1], c[2]]) } else { None }, shadow != 0, [c[3], c[4], c[5]], from_raw_parts_mut(bb, 4));
+}
+#[no_mangle]
+pub unsafe extern "C" fn word_sprite(a: *const u8, w: i32, h: i32, d: *mut u8, cols: *const u8) {
+    let c = from_raw_parts(cols, 12); let rgb = |k: usize| [c[k * 3], c[k * 3 + 1], c[k * 3 + 2]];
+    text::word(from_raw_parts(a, (w * h) as usize), w, h, from_raw_parts_mut(d, ((w + 4) * (h + 6) * 4) as usize), rgb(0), rgb(1), rgb(2), rgb(3));
+}
+#[no_mangle] pub unsafe extern "C" fn alpha_mask(d: *const u8, n: usize, thr: u8, m: *mut u8) { text::mask(from_raw_parts(d, n * 4), thr, from_raw_parts_mut(m, n)); }
+#[no_mangle] pub unsafe extern "C" fn mask_paint(m: *const u8, n: usize, r: u8, g: u8, b: u8, d: *mut u8) { text::paint(from_raw_parts(m, n), [r, g, b], from_raw_parts_mut(d, n * 4)); }

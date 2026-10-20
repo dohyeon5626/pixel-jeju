@@ -9,7 +9,7 @@
 let WK = null;
 const WK_READY = (async () => {
   if (/[?&]js\b/.test(location.search)) return;
-  const url = 'wasm/jeju.wasm?v=271', imports = { m: { jsin: Math.sin, jcos: Math.cos, jasin: Math.asin, jexp: Math.exp, jpow: Math.pow, jhypot2: Math.hypot, jhypot3: Math.hypot } };
+  const url = 'wasm/jeju.wasm?v=272', imports = { m: { jsin: Math.sin, jcos: Math.cos, jasin: Math.asin, jexp: Math.exp, jpow: Math.pow, jhypot2: Math.hypot, jhypot3: Math.hypot } };
   try {
     let inst;
     try { inst = (await WebAssembly.instantiateStreaming(fetch(url), imports)).instance; }
@@ -78,6 +78,31 @@ function wkApi(ex) {
       s.set([P.x, P.y, P.vx, P.vy, dt, wind, P.rollT, al, ar, P.pound ? 1 : 0, hold ? 1 : 0, P.onGround ? 1 : 0]);
       ex.player_fall(); P.x = s[0]; P.y = s[1]; P.vy = s[3];
     }),
+    cavePassage: guard((d, scrW) => { cvc(); run([d], p => { ex.cave_passage(p, d.length, scrW); d.set(u8(p, d.length)); }); }),
+    cliffShade: guard((d, lw, h, ia, F, Y0, Y1, cxA) => { run([d, Float64Array.from(F), Float64Array.from(Y0), Float64Array.from(Y1)], (pd, pf, p0, p1) => { ex.cliff_shade(pd, lw, h, ia, F.length, pf, p0, p1, cxA); d.set(u8(pd, d.length)); }); }),
+    // 글자: 알파만 넘기고 RGBA를 받아 캔버스에 한 번에 · textSprite는 다듬을 경계 상자 [x0, y0, x1, y1]를 돌려줌 (못 하면 null)
+    textSprite(src, w, h, out, outline, shadow, color) {
+      let bb = null;
+      guard(() => {
+        const a = new Uint8Array(w * h); for (let i = 0; i < a.length; i++) a[i] = src[i * 4 + 3];
+        const x = out.getContext('2d'), id = x.createImageData(out.width, out.height), cols = new Uint8Array(6); cols.set(outline ? rgb(outline) : [0, 0, 0]); cols.set(rgb(color), 3);
+        run([a, id.data.length, cols, 16], (pa, pd, pc, pb) => { ex.text_sprite(pa, w, h, pd, out.width, out.height, outline ? 1 : 0, shadow ? 1 : 0, pc, pb); id.data.set(u8(pd, id.data.length)); bb = [...new Int32Array(ex.memory.buffer, pb, 4)]; });
+        x.putImageData(id, 0, 0);
+      })();
+      return bb;
+    },
+    wordSprite(src, w, h, cols) {
+      let c = null;
+      guard(() => {
+        const a = new Uint8Array(w * h); for (let i = 0; i < a.length; i++) a[i] = src[i * 4 + 3];
+        const o = mk(w + 4, h + 6), x = o.getContext('2d'), id = x.createImageData(w + 4, h + 6);
+        run([a, id.data.length, rgbs(cols)], (pa, pd, pc) => { ex.word_sprite(pa, w, h, pd, pc); id.data.set(u8(pd, id.data.length)); });
+        x.putImageData(id, 0, 0); c = o;
+      })();
+      return c;
+    },
+    alphaMask: guard((d, thr, m) => run([d, m.length], (pd, pm) => { ex.alpha_mask(pd, m.length, thr, pm); m.set(u8(pm, m.length)); })),
+    maskPaint: guard((m, out, col) => { const c = rgb(col), x = out.getContext('2d'), id = x.createImageData(out.width, out.height); run([m, id.data.length], (pm, pd) => { ex.mask_paint(pm, m.length, c[0], c[1], c[2], pd); id.data.set(u8(pd, id.data.length)); }); x.putImageData(id, 0, 0); }),
     funnel: guard((d, cw, chh, ox, oy, x, t, sp, dir, big, form, low, full) => { pal(); run([d.length], p => { ex.funnel(p, cw, chh, ox, oy, x, t, sp, dir, big ? 1 : 0, form, low, full); d.set(u8(p, d.length)); }); }),
   };
 }
