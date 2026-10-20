@@ -567,6 +567,8 @@ class Pickup {
   constructor(kind, x, y, vx = 0, vy = 0) { Object.assign(this, { kind, x, y, vx, vy, life: 8, grounded: false, t: 0, phase: rand(0, 6.28), spin: rand(0, 1), sq: 0 }); }
   update(dt) { return WK.hzUpdate(this, 'pickup', dt); }   // 움직임는 wasm/src/hz_item.rs
   box() { return { x: this.x - 6, y: this.y - 10, w: 12, h: 11 }; }
+  // 귤로 맞힐 때: 아이템은 감싼 금빛 테 전체 (그리는 22×22 테두리와 같은 자리) · 그냥 귤 · 함정은 몸통만
+  shotBox() { return ITEM_KINDS.includes(this.kind) ? { x: Math.round(this.x - 10) - 1, y: Math.round(this.y - 21) - 1, w: 22, h: 22 } : this.box(); }
   draw() {
     if (this.life < 1.2 && Math.floor(this.life * 6) % 2) return;
     if (ITEM_KINDS.includes(this.kind)) {   // 아이템은 금빛 테 안에 넣어 썩은 귤 · 장애물과 확실히 구분
@@ -2416,7 +2418,7 @@ function checkHits() {
   }
   for (const s of G.shots) {   // 던진 귤로 아이템 · 귤을 맞히면 그 자리에서 먹음
     if (s.dead) continue;
-    const sb = s.box(), p = G.pickups.find(q => !q.dead && overlap(sb, q.box()));
+    const sb = s.box(), p = G.pickups.find(q => !q.dead && overlap(sb, q.shotBox()));
     if (!p) continue;
     if (p.kind !== 'tang') s.dead = true;   /* 그냥 귤은 줍고 계속 날아감 (싸우는 중에 귤이 가로막지 않게) */ fx({ x: p.x, y: p.y - 8, kind: 'flare', size: 7, life: 0.15, col: '#fff4e0' }); for (let i = 0; i < 5; i++) fx({ x: p.x, y: p.y - 8, vx: (P.x - p.x) * rand(1.5, 2.5), vy: (P.y - 14 - p.y) * rand(1.5, 2.5) - 40, life: 0.35, kind: 'px', col: C.yel[3] });   // 먹은 빛이 숨비 쪽으로 튐
     if (collectPickup(p, true) === 'dead') return;
