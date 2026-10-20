@@ -15,7 +15,7 @@ function viewW() {
   const w = innerWidth - px('paddingLeft') - px('paddingRight'), h = innerHeight - px('paddingTop') - px('paddingBottom');
   return Math.max(426, Math.min(576, Math.round(H * w / Math.max(1, h) / 2) * 2));
 }
-const W = viewW(), WORLD_W = W + 44;
+const W = viewW();
 
 // ── 팔레트 ───────────────────────────────────────────────────
 const C = {

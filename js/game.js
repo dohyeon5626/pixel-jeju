@@ -29,10 +29,9 @@ const lightCv = mk(W, H), lg = lightCv.getContext('2d'); lg.imageSmoothingEnable
 // ── 조작감 상수 ──────────────────────────────────────────────
 const STEP = 1 / 120;
 const AIR_JUMPS = 2; // 공중 점프 2번 = 3단 점프
-const GRAV = 860, JUMP_V = 410, DJUMP_V = 300, JUMP_CUT = 0.52;   // 첫 점프 꼭대기 약 100px, 3단은 천장 근처 (중력 · 낙하 한계 · 걷기 가속은 wasm/src/player.rs에도)
-const SPEED = 94;
-const ROLL_T = 0.34, ROLL_CD = 0.36, ROLL_V = 210, COYOTE = 0.09, BUFFER = 0.13;
-const THROW_CD = 0.24, AMMO_MAX = 30;
+const GRAV = 860, JUMP_V = 410;   // 타이틀에서 시작할 때 뛰어오르는 숨비 (게임 중 숨비 움직임 · 점프 · 구르기 값은 wasm/src/player.rs)
+const ROLL_T = 0.34, ROLL_CD = 0.36;   // 구르기 길이 · 쿨다운 (무적 판정 · 그림 · HUD에도 씀)
+const AMMO_MAX = 30;
 const NONE = [];
 
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -1172,8 +1171,6 @@ class PatParcel extends Pattern {
   update(dt) { WK.patUpdate(this, 'parcel', dt); }   // 언제 · 어디에 낼지는 wasm/src/pat_basic.rs
 }
 
-// ── 밭담 바람구멍: 현무암 돌담이 옆에서 밀려옴 · 뚫린 구멍으로만 통과 (바닥 = 구르기, 가운데 = 점프, 위 = 2단 점프) ──
-const WALL_TOP = -VOFF - 4, WALL_H = GROUND - WALL_TOP;
 // ── 오름 패러글라이딩: 하늘에 뜬 낙하산은 밟으면 통통 튀는 징검다리 (밟으면 귤), 땅에는 꼬마 하르방 ──
 const GLIDER = SPR.GLIDER;
 class Glider {
@@ -1314,13 +1311,12 @@ class TideWave {
 //  안쪽 관은 입술과 중심이 어긋난 짙은 타원 · 몸통 색은 수면을 따라 층이 지고(빛이 위에서 스며듦) 비탈엔 결 따라 흰 줄
 //  거품은 물마루 · 입술 바깥 · 입술 끝(갈퀴처럼 갈라짐) · 낮은 파도 앞발치(부서지는 흰 물)에만 덩어리지게
 //  높은 파도는 아래 16px이 비어 굴러서 지나갈 수 있음 (판정과 같게)
-const TIDE_FR = 6, TIDE_SPR = {};
+const TIDE_SPR = {};
 function tideSprite(hi, f, dir) {
   const key = (hi ? 'h' : 'l') + f + (dir < 0 ? 'L' : 'R'); if (TIDE_SPR[key]) return TIDE_SPR[key];
   if (dir < 0) { const r = tideSprite(hi, f, 1), l = flipC(r); l.ax = r.width - 1 - r.ax; l.geo = r.geo; return (TIDE_SPR[key] = l); }
   return (TIDE_SPR[key] = WK.tide(hi, f));   // 오른쪽으로 가는 파도 (기준점 ax · 모양 geo가 붙어 옴)
 }
-const TIDE = ['#0e2e58', '#1a4e86', '#2a72aa', '#3e98c4', '#6cc4dc', '#c8eef4', '#ffffff'].map(c => mute(c, 0.85));
 
 // ── 이벤트: 설문대할망 — 물을 쏟아 폭포를 내리고, 오름을 솟게 하고, 치마폭 파도를 보냄 ──
 class PatSeolmun extends PatEvent {
