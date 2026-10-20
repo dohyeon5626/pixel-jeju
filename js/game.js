@@ -29,8 +29,8 @@ const lightCv = mk(W, H), lg = lightCv.getContext('2d'); lg.imageSmoothingEnable
 // ── 조작감 상수 ──────────────────────────────────────────────
 const STEP = 1 / 120;
 const AIR_JUMPS = 2; // 공중 점프 2번 = 3단 점프
-const GRAV = 860, JUMP_V = 410, DJUMP_V = 300, JUMP_CUT = 0.52, MAX_FALL = 470;   // 첫 점프 꼭대기 약 100px, 3단은 천장 근처
-const SPEED = 94, ACCEL = 1150, AIR_ACCEL = 760, FRICTION = 1500, AIR_FRICTION = 320;
+const GRAV = 860, JUMP_V = 410, DJUMP_V = 300, JUMP_CUT = 0.52;   // 첫 점프 꼭대기 약 100px, 3단은 천장 근처 (중력 · 낙하 한계 · 걷기 가속은 wasm/src/player.rs에도)
+const SPEED = 94;
 const ROLL_T = 0.34, ROLL_CD = 0.36, ROLL_V = 210, COYOTE = 0.09, BUFFER = 0.13;
 const THROW_CD = 0.24, AMMO_MAX = 30;
 const NONE = [];
@@ -1367,57 +1367,9 @@ class Vortex { // 태풍 마이삭: 땅에서 말려 올라가 깔때기가 된 
     if (!this.cv) { this.cv = mk(cw, chh); this.cx2 = this.cv.getContext('2d'); this.id = this.cx2.createImageData(cw, chh); }
     if (this.imgT != null && this.t >= this.imgT && this.t - this.imgT < G.speed / 30) return [this.cv, ox, oy];   // 초당 30번만 새로 그림 (멈춤 화면에선 그대로)
     this.imgT = this.t;
-    if (!(WK && WK.funnel(this.id.data, cw, chh, ox, oy, this.x, this.t, this.spin, this.dir, this.big, form, full * (1 - easeOut(form)), full))) this.funnelPx(form, full, cw, chh, ox, oy);
+    WK.funnel(this.id.data, cw, chh, ox, oy, this.x, this.t, this.spin, this.dir, this.big, form, full * (1 - easeOut(form)), full);   // 픽셀은 wasm/src/funnel.rs
     this.cx2.putImageData(this.id, 0, 0);
     return [this.cv, ox, oy];
-  }
-  funnelPx(form, full, cw, chh, ox, oy) {   // 픽셀 (WASM: wasm/src/funnel.rs)
-    const d = this.id.data; d.fill(0);
-    const hb = this.big ? 40 : 30, T = Vortex.PAL, DU = Vortex.DUST, SC = Vortex.CLOUD, sp = this.spin, t = this.t, low = full * (1 - easeOut(form));   // low: 내려오는 중인 깔때기 끝 (땅에서 위로 높이)
-    const put = (x, y, col, a) => { if (x < 0 || y < 0 || x >= cw || y >= chh || a <= 0.02) return; const q = (y * cw + x) * 4, A = Math.min(1, a), c = rgb(col), a0 = d[q + 3] / 255, ao = A + a0 * (1 - A); for (let k = 0; k < 3; k++) d[q + k] = (c[k] * A + d[q + k] * a0 * (1 - A)) / ao; d[q + 3] = ao * 255; };
-    const cxAt = u => this.x + Math.sin(t * 1.1 + u * 3.2) * 4 * (0.3 + u) + this.dir * u * u * 9 - ox;   // 위가 살짝 앞서 가며 밧줄처럼 휨
-    for (let y = 0; y < chh; y++) {
-      const v = GROUND - (oy + y); if (v < low || v > full + 2) continue;
-      const u = clamp(v / full, 0, 1), cx = cxAt(u), r = 3.5 + Math.pow(u, 1.7) * 30 + (u < 0.07 ? (0.07 - u) * 60 : 0);
-      for (let x = Math.floor(cx - r - 3); x <= Math.ceil(cx + r + 3); x++) {
-        const s = (x + 0.5 - cx) / r, es = Math.abs(s) - (vnoise(v * 0.28 + t * 3, s * 2 + sp, 7711) - 0.5) * 0.3; if (es > 1.05) continue;
-        const band = Math.sin(Math.asin(clamp(s, -1, 1)) * 2.4 + v * 0.22 - sp * 1.7);
-        let lit = 0.47 - s * 0.26 + band * 0.16 + (vnoise(x * 0.3, v * 0.12 - t * 2, 7712) - 0.5) * 0.12 - u * 0.1;   // 하늘보다 짙게 (빗물 머금은 회색)
-        let col = T[clamp(Math.floor(lit * T.length), 0, T.length - 1)];
-        if (u < 0.28) col = mix(col, DU[clamp(Math.floor(lit * DU.length), 0, DU.length - 1)], (0.28 - u) / 0.28 * 0.7);   // 아래쪽은 들려 올라간 흙먼지 빛
-        put(x, y, col, clamp(1.2 - es * 1.15, 0, 1) * (0.92 - (v < low + 6 ? (low + 6 - v) / 6 * 0.6 : 0)) * (v > hb + 4 ? 0.5 : 1));   // 맞는 높이 위쪽 깔때기는 반투명 (뛰어넘어도 되는 곳)
-      }
-    }
-    if (low < 8) {   // 발치 흙먼지 구름: 땅을 쓰는 낮은 흙먼지 치마 + 회오리치며 피어오르는 흙먼지 덩이들 (아래는 넓고 위로 좁아지는 원뿔 · 맞는 높이 hb까지)
-      const bx = cxAt(0), k = 1 - low / 8;
-      for (let y = 0; y < chh; y++) { const v = GROUND - (oy + y); if (v < -1 || v > 6) continue; for (let x = Math.floor(bx - 34); x <= Math.ceil(bx + 34); x++) {   // 땅 흙먼지 치마
-        const dx = x + 0.5 - bx, rr = Math.hypot(dx / (28 + 4 * Math.sin(t * 2 + dx * 0.1)), (v + 1) / 6), n = vnoise(dx * 0.18 - sp * 0.8 * Math.sign(dx || 1), v * 0.4, 7713);
-        if (rr > 0.75 + n * 0.4) continue; put(x, y, DU[clamp(Math.floor((0.3 + n * 0.5) * DU.length), 0, DU.length - 1)], clamp((1.1 - rr) * 1.3, 0, 0.8) * k);
-      } }
-      const puffs = [];
-      for (let i = 0; i < 36; i++) {   // 덩이마다 각도 · 오르는 속도 · 축에서 거리가 제각각 → 원뿔 안을 몽글몽글 채우며 피어오름
-        const h1 = hash2(i, 1, 7720), h2 = hash2(i, 2, 7721), h3 = hash2(i, 3, 7722), rise = (t * (0.45 + h3 * 0.35) + h1) % 1, v = rise * (hb + 2), wv = 20 - rise * 10;
-        const ang = sp * (1.05 + h2 * 0.45) + h2 * 6.283, sa = Math.sin(ang), rr = wv * (0.25 + 0.75 * Math.sqrt(h3));
-        puffs.push([bx + Math.cos(ang) * rr, v + sa * 1.5, (5.4 - rise * 2.4) * (0.8 + h1 * 0.4), sa, rise]);
-      }
-      puffs.sort((p1, p2) => p1[3] - p2[3]);   // 뒤 덩이부터 (돌아가는 깊이)
-      for (const [px, pv, pr, sa, rise] of puffs) {
-        const fade = (rise > 0.82 ? (1 - rise) / 0.18 : 1) * (rise < 0.06 ? rise / 0.06 : 1);
-        for (let yy = Math.floor(pv - pr - 1); yy <= Math.ceil(pv + pr + 1); yy++) for (let xx = Math.floor(px - pr - 1); xx <= Math.ceil(px + pr + 1); xx++) {
-          const nx = (xx + 0.5 - px) / pr, ny = (yy + 0.5 - pv) / pr, dd = nx * nx + ny * ny, en = (vnoise((xx - px) * 0.5 + pr * 3, (yy - pv) * 0.5 - t * 3, 7714) - 0.5) * 0.5;   /* 덩이 가장자리는 몽글몽글 흩어짐 */
-          if (dd > 1 + en) continue;
-          const lit = 0.52 - nx * 0.15 + ny * 0.15 + sa * 0.12;   // 왼쪽 위가 밝은 둥근 덩이 · 앞쪽 덩이는 밝고 뒤쪽은 짙게 (대비는 낮게 — 먼지라서)
-          put(xx, GROUND - yy - oy, DU[clamp(Math.floor(lit * DU.length), 0, DU.length - 1)], (sa < 0 ? 0.78 : 0.92) * fade * k * (dd > 0.45 ? Math.max(0.2, 1 - (dd - 0.45) * 1.3) : 1));   // 가장자리는 부드럽게 비침
-        }
-      }
-    }
-    if (this.big || form > 0.2) {   // 꼭대기 먹구름 덩이: 깔때기를 물고 천천히 돎 (위쪽 먹구름 띠와 이어짐)
-      const tx = cxAt(1);
-      for (let x = Math.floor(tx - 62); x <= Math.ceil(tx + 62); x++) { const dx = (x - tx) / 62; if (Math.abs(dx) > 1) continue; const bot = 22 - dx * dx * 14 + (vnoise(x * 0.12 + sp * 0.5 * this.dir, 1, 7715) - 0.5) * 6, topY = 2 + (vnoise(x * 0.08 - sp * 0.3, 2, 7716) - 0.5) * 6; for (let y = Math.max(0, Math.ceil(topY)); y < 30 && y <= bot; y++) {
-        const n = vnoise((x - tx) * 0.09 + Math.cos(sp * 0.4) * 2, y * 0.18 + sp * 0.25, 7717), dep = (y - topY) / Math.max(1, bot - topY);
-        put(x, y, SC[clamp(Math.floor((0.55 + n * 0.5 - dep * 0.45) * SC.length), 0, SC.length - 1)], (1 - Math.pow(Math.abs(dx), 4)) * (this.big ? 1 : 0.85));
-      } }
-    }
   }
   draw() {
     const cx = this.x, form = clamp(this.t / this.formT, 0, 1);
@@ -2862,11 +2814,10 @@ function updatePlayer(dt) {
     P.dustT -= dt; if (P.onGround && P.dustT <= 0) { dust(P.x - P.face * 5, GROUND, 1, -P.face); P.dustT = 0.04; }
     if (P.rollT <= 0) endRoll(ROLL_CD);
   } else {
-    const ac = P.onGround ? ACCEL : AIR_ACCEL, fr = P.onGround ? FRICTION : AIR_FRICTION;
     if (dir) {
       if (P.onGround && Math.sign(P.vx) === -dir && Math.abs(P.vx) > 50) { P.skidT = 0.12; if (Math.random() < 0.5) dust(P.x + dir * 4, GROUND, 1, dir); }
-      P.vx = WK ? WK.walk(P.vx, dir, P.onGround, G.up.speed || 0, dt) : approach(P.vx, dir * SPEED * (1 + 0.08 * (G.up.speed || 0)), ac * dt); P.face = dir;   // WASM: wasm/src/player.rs
-    } else P.vx = WK ? WK.walk(P.vx, 0, P.onGround, 0, dt) : approach(P.vx, 0, fr * dt);
+      P.vx = WK.walk(P.vx, dir, P.onGround, G.up.speed || 0, dt); P.face = dir;   // 가속 · 마찰은 wasm/src/player.rs
+    } else P.vx = WK.walk(P.vx, 0, P.onGround, 0, dt);
   }
 
   if (P.poundBuf > 0 && P.hurtT <= 0 && !P.pound && !P.onGround) {
@@ -2925,7 +2876,7 @@ function updatePlayer(dt) {
     if (P.poundT > 0) P.vy = 0; else P.vy = 620;
     P.ghostT2 = (P.ghostT2 || 0) - dt; if (P.ghostT2 <= 0 && P.poundT <= 0) { P.ghostT2 = 0.03; G.ghosts.push({ img: curFrame(), x: P.x, y: P.y, life: 0.16, col: C.yel[3] }); }
   }
-  if (!(WK && WK.fall(P, dt, G.wind, G.arenaL || 8 + EDGE, G.arenaR, held.jump))) playerFall(dt);   // WASM: wasm/src/player.rs
+  WK.fall(P, dt, G.wind, G.arenaL || 8 + EDGE, G.arenaR, held.jump);   // 중력 · 바람 · 양옆 벽 · 부드러운 천장 (wasm/src/player.rs)
   if (!P.onGround) P.peakY = Math.min(P.peakY ?? P.y, P.y);
 
   if (P.y >= GROUND) {
@@ -2951,17 +2902,6 @@ function updatePlayer(dt) {
   updateScarf();
 }
 
-// 중력 · 바람 · 양옆 벽 · 부드러운 천장(점수판 아래에서 멈춤)
-function playerFall(dt) {
-  let gmul = 1;
-  if (Math.abs(P.vy) < 50 && held.jump && !P.onGround) gmul = 0.55;
-  else if (P.vy > 0) gmul = 1.25;
-  P.vy = P.pound ? P.vy : Math.min(P.vy + GRAV * gmul * dt, MAX_FALL);
-  P.x += (P.vx + G.wind * (P.rollT > 0 ? 0.4 : 1)) * dt;
-  P.y += P.vy * dt;
-  P.x = clamp(P.x, G.arenaL || 8 + EDGE, G.arenaR);
-  if (P.y < -VOFF + 40) { P.y = -VOFF + 40; if (P.vy < 0) P.vy *= 0.3; }
-}
 function clearInputs() {
   for (const k of GAME_KEYS) pressed[k] = false;
   pressed.left = pressed.right = pressed.start = false;
@@ -3216,14 +3156,7 @@ function updateVolcano(dt) {
 // 땅에 닿은 빗방울이 톡
 function rainSplash(p) { if (p.near && Math.random() < 0.5) for (const sd of [-1, 1]) fx({ x: p.x, y: GROUND - 2, vx: sd * rand(15, 35) + p.vx * 0.1, vy: -rand(30, 60), grav: 320, life: 0.18, kind: 'px', col: 'rgba(215,228,250,0.85)' }); }
 function updateFxList(dt) {
-  if (!(WK && WK.fxStep(G.fx, dt, amb.t))) for (const p of G.fx) {   // WASM: wasm/src/fx.rs (모두 한 번에)
-    p.life -= dt; p.vy += p.grav * dt;
-    if (p.drag) { p.vx *= 1 - p.drag * dt; p.vy *= 1 - p.drag * dt; }
-    if (p.kind === 'petal') p.vy += Math.sin(amb.t * 6 + p.x) * 60 * dt;
-    p.x += p.vx * dt; p.y += p.vy * dt;
-    if ((p.kind === 'px' || p.kind === 'chunk') && p.grav && p.y > GROUND + 1) { p.y = GROUND + 1; p.vy *= -0.35; p.vx *= 0.6; }
-    if (p.kind === 'rain' && p.y >= GROUND - 1) { p.life = 0; rainSplash(p); }
-  }
+  WK.fxStep(G.fx, dt, amb.t);   // 모두 한 번에 (wasm/src/fx.rs)
   G.fx = G.fx.filter(p => p.life > 0);
   if (G.fx.length > 600) G.fx.splice(0, G.fx.length - 600);
 }
@@ -4211,7 +4144,8 @@ function frame(now) {
   requestAnimationFrame(frame);
   const fonts = Promise.all(['12px Galmuri11', 'bold 12px Galmuri11', '10px Galmuri9'].map(f => document.fonts.load(f, '가A1')));
   await Promise.race([fonts.catch(() => {}), new Promise(r => setTimeout(r, 4000))]);
-  await Promise.race([WK_READY, new Promise(r => setTimeout(r, 3000))]);   // 배경 굽는 WASM 커널 (늦으면 JS로)
+  await WK_READY;   // 배경 · 물리 계산 (WASM 없이는 못 돎)
+  if (!WK) { wasmMissing(); return; }
   fonts.then(() => { textCache.clear(); glyphCache.clear(); logoCache.clear(); _strC.clear(); araeCache.clear(); wordCache.clear(); FIT_MEMO.clear(); for (const k in _uiSpr) delete _uiSpr[k]; for (const k in SUB_BTN) delete SUB_BTN[k]; }).catch(() => {});
   buildScenes();
   loadPortraits();

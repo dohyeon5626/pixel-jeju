@@ -73,7 +73,6 @@ function vnoise(x, y, s = 0) {
   const a = hash2(xi, yi, s), b = hash2(xi + 1, yi, s), c = hash2(xi, yi + 1, s), d = hash2(xi + 1, yi + 1, s);
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
-const fbm = (x, y, s = 0) => vnoise(x, y, s) * 0.6 + vnoise(x * 2.1, y * 2.1, s + 7) * 0.3 + vnoise(x * 4.3, y * 4.3, s + 13) * 0.1;
 
 // ── 색 계산 ──────────────────────────────────────────────────
 const _rgb = new Map();
@@ -229,18 +228,18 @@ function araeGlyph(seg, css, h) {
   if (L < 0 || L > 18 || seg.charCodeAt(1) !== 0x119E) { araeCache.set(key, null); return null; }
   const syl = V => String.fromCharCode(0xAC00 + (L * 21 + V) * 28 + Math.max(0, T));
   const probe = PROBE(); probe.font = css; const w = Math.ceil(probe.measureText(syl(18)).width) + 2, H = h + 4;
-  const draw = V => { const c = mkR(w, H), x = c.getContext('2d'); x.font = css; x.textBaseline = 'top'; x.fillStyle = '#000'; x.fillText(syl(V), 1, 1); const d = x.getImageData(0, 0, w, H).data, m = new Uint8Array(w * H); if (!(WK && WK.alphaMask(d, 110, m))) for (let i = 0; i < w * H; i++) m[i] = d[i * 4 + 3] > 110 ? 1 : 0; return m; };
+  const draw = V => { const c = mkR(w, H), x = c.getContext('2d'); x.font = css; x.textBaseline = 'top'; x.fillStyle = '#000'; x.fillText(syl(V), 1, 1); const m = new Uint8Array(w * H); WK.alphaMask(x.getImageData(0, 0, w, H).data, 110, m); return m; };
   const A = draw(18), Bm = draw(8);
   let tb = -1, sx = 0, n = 0;
   for (let j = 0; j < H; j++) for (let i = 0; i < w; i++) if (Bm[j * w + i] && !A[j * w + i]) { tb = Math.max(tb, j); sx += i; n++; }
-  const out = mk(w, H), ox = out.getContext('2d'); ox.fillStyle = '#000';
+  const out = mk(w, H);
   if (tb >= 0) {
     const cx = Math.round(sx / n), rows = [];
     for (let j = tb + 1; j < Math.min(H, tb + 4); j++) { let run = 0; for (let i = cx - 2; i <= cx + 2; i++) run += A[j * w + i] || 0; if (run >= 4) rows.push(j); else if (rows.length) break; }
     for (const j of rows) { let a = cx, b = cx; while (a > 0 && A[j * w + a - 1]) a--; while (b < w - 1 && A[j * w + b + 1]) b++; for (let i = a; i <= b; i++) A[j * w + i] = 0; }
     const t = Math.max(1, rows.length); for (const j of rows) for (let i = cx - Math.floor(t / 2); i < cx - Math.floor(t / 2) + t; i++) A[j * w + i] = 1;   // 점(ᆞ)
   }
-  if (!(WK && WK.maskPaint(A, out, '#000000'))) for (let j = 0; j < H; j++) for (let i = 0; i < w; i++) if (A[j * w + i]) ox.fillRect(i, j, 1, 1);   // WASM: 픽셀마다 fillRect 대신 한 번에
+  WK.maskPaint(A, out, '#000000');
   out.adv = w - 2; araeCache.set(key, out); return out;
 }
 // 옛한글이 섞인 줄: 글자 묶음(grapheme)마다 그리기 · 너비
@@ -266,7 +265,7 @@ function textSprite(str, { font = 'm', color = '#ffffff', outline = INK, shadow 
   const pad = outline ? 1 : 0, sh = shadow ? 1 : 0;
   const out = mkR(raw.width + pad * 2, raw.height + pad * 2 + sh), ox = out.getContext('2d');
   const on = (i, j) => i >= 0 && j >= 0 && i < raw.width && j < raw.height && src[(j * raw.width + i) * 4 + 3] > 110;
-  const bb = WK && HEX6.test(color) && (!outline || HEX6.test(outline)) && WK.textSprite(src, raw.width, raw.height, out, outline, shadow, color);   // WASM: 먹선 · 글자를 RGBA로 한 번에 (1px fillRect 수천 번이 다시 읽을 때 한꺼번에 그려져 멈칫하던 것)
+  const bb = HEX6.test(color) && (!outline || HEX6.test(outline)) ? WK.textSprite(src, raw.width, raw.height, out, outline, shadow, color) : null;   // 먹선 · 글자를 RGBA로 한 번에 (1px fillRect 수천 번은 다시 읽을 때 한꺼번에 그려져 멈칫함) · 반투명 색만 아래 JS로
   if (!bb && outline) {
     ox.fillStyle = outline;
     for (let j = -1; j <= raw.height; j++) for (let i = -1; i <= raw.width; i++) {

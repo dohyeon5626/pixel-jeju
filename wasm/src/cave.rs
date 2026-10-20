@@ -6,18 +6,18 @@ use crate::noise::*;
 static mut CVC: [[u8; 3]; 77] = [[0; 3]; 77];
 pub fn set_cvc(t: &[u8]) { for k in 0..77 { unsafe { CVC[k] = [t[k * 3], t[k * 3 + 1], t[k * 3 + 2]]; } } }
 
-fn cvc(v: f64, w: f64) -> [u8; 3] {
+pub fn cvc(v: f64, w: f64) -> [u8; 3] {
     let i = clamp(round(v * 10.0), 0.0, 10.0) as usize; let r = round(clamp(w, -1.0, 1.0) * 3.0) as i32;
     unsafe { CVC[i * 7 + (r + 3) as usize] }
 }
-fn put(d: &mut [u8], w: i32, i: i32, y: i32, c: [u8; 3]) {
+pub fn put(d: &mut [u8], w: i32, i: i32, y: i32, c: [u8; 3]) {
     if i < 0 || i >= w || y < 0 { return; }
     let p = ((y * w + i) * 4) as usize; if p >= d.len() { return; }
     d[p] = c[0]; d[p + 1] = c[1]; d[p + 2] = c[2]; d[p + 3] = 255;
 }
 
 // cvLight: 화면 좌표 → (등불빛, 낮빛)
-fn light(sx: f64, sy: f64, col_k: f64) -> (f64, f64) {
+pub fn light(sx: f64, sy: f64, col_k: f64) -> (f64, f64) {
     let mut l = 0.0;
     for (lx, ly, s) in [(150.0, 182.0, 1.0), (346.0, 182.0, 0.85)] {
         let dx = (sx - lx) / 44.0; let dy = (sy - ly) / (if sy < ly { 80.0 } else { 12.0 });

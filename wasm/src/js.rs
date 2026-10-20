@@ -43,6 +43,7 @@ pub const PI: f64 = std::f64::consts::PI;
 }
 
 // art.js mix() → hex(): 채널마다 반올림
+#[inline(never)]
 pub fn mix(a: [u8; 3], b: [u8; 3], t: f64) -> [u8; 3] {
     let ch = |k: usize| clamp(round(a[k] as f64 + (b[k] as f64 - a[k] as f64) * t), 0.0, 255.0) as u8;
     [ch(0), ch(1), ch(2)]

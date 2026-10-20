@@ -7,6 +7,7 @@ pub fn hash2(x: f64, y: f64, s: f64) -> f64 {
     (h ^ (h >> 16)) as f64 / 4294967296.0
 }
 
+#[inline(never)]
 pub fn vnoise(x: f64, y: f64, s: f64) -> f64 {
     let xi = x.floor(); let yi = y.floor(); let xf = x - xi; let yf = y - yi;
     let u = xf * xf * (3.0 - 2.0 * xf); let v = yf * yf * (3.0 - 2.0 * yf);
@@ -14,6 +15,7 @@ pub fn vnoise(x: f64, y: f64, s: f64) -> f64 {
     a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v
 }
 
+#[inline(never)]
 pub fn fbm(x: f64, y: f64, s: f64) -> f64 {
     vnoise(x, y, s) * 0.6 + vnoise(x * 2.1, y * 2.1, s + 7.0) * 0.3 + vnoise(x * 4.3, y * 4.3, s + 13.0) * 0.1
 }
