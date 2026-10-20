@@ -1,0 +1,3 @@
+# wasm/build.sh가 만드는 파일 (언어 통계 · diff에서 빼기)
+wasm/jeju-wasm.js linguist-generated=true
+wasm/jeju.wasm binary
