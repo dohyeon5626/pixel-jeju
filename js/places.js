@@ -728,23 +728,8 @@ function caveCeil(ph, day) {
   const edge = []; for (let i = 0; i < lw; i++) { let e = 24 + Math.pow(Math.abs(i - lw / 2) / (lw / 2), 2.2) * 24 + Math.sin(i * 0.016 + 0.4) * 3 + (vnoise(i * 0.045, 0.5, 7102) - 0.5) * 9 + (vnoise(i * 0.17, 1.5, 7103) - 0.5) * 3; for (const [lx, lwid, lh] of [[60, 14, 7], [196, 11, 6], [392, 16, 8]]) { const u = (i - lx - sh) / lwid; if (Math.abs(u) < 1) e += Math.cos(u * Math.PI / 2) ** 2 * lh; } const u = (i - hc) / (hw + 26); if (Math.abs(u) < 1) e += Math.pow(1 - u * u, 1.5) * 21; edge.push(Math.round(e)); }   // 화면 가장자리로 갈수록 두꺼운 아치 · 흘러내린 용암 덩이 · 구멍 둘레는 무너진 테두리   // 구멍 둘레는 무너진 테두리라 두툼
   const holeBot = i => edge[clamp(i, 0, lw - 1)] - 5, inHole = (i, y) => { const hd = holeBot(i); return y < hd && Math.abs(i - hc) / hw < Math.sqrt(Math.max(0, 1 - Math.pow(y / hd, 3))) * (1 + (vnoise(y * 0.35, i > hc ? 1 : 2, 7107) - 0.5) * 0.22); };
   const sky = ph.sky, night = PHASES.indexOf(ph) === 3, skyT = night ? sky[0] : sky[1], skyB = night ? sky[1] : sky[3], /* 구멍으로 올려다본 머리 위 하늘 · 밤엔 별 */ GR = ['#1e3624', '#2e5230', '#46723a', '#669846', '#8cbc58'].map(k => mix(k, '#141a20', (1 - day) * 0.75)), GF = GR.map(k => mix(k, '#1c2219', 0.3));   // GF: 굴 바닥 식물 (빛줄기 속이라도 조금 가라앉게)
-  for (let i = 0; i < lw; i++) {
-    const [L] = cvLight(i - sh, edge[i] + 8);
-    for (let y = 0; y <= edge[i]; y++) {
-      if (inHole(i, y)) {   // 구멍 너머: 하늘 → 맞은편 구멍 테두리(풀 · 흙 · 낮빛 받은 바위)
-        const fr = holeBot(i) - y, gl = 7 + Math.round(vnoise(i * 0.25, 0.5, 7108) * 3);
-        const col = fr > gl ? (night && hash2(i, y, 7112) < 0.012 ? '#e8e0f0' : mix(skyT, skyB, clamp(y / holeBot(i) * 1.2, 0, 1))) : fr > gl - 2 ? GR[3 + (hash2(i, y, 7109) < 0.3 ? 1 : 0)] : fr > gl - 4 ? GR[2] : fr > 2 ? mix('#5a4a3a', '#141a20', (1 - day) * 0.7) : mix('#7a7a70', '#141a20', (1 - day) * 0.7);
-        cvPut(d, lw, i, y, col); if (fr === gl + 1 && hash2(i, 3, 7110) < 0.45) cvPut(d, lw, i, y - Math.floor(hash2(i, 4, 7111) * 3), GR[3]);   // 풀잎이 하늘로 삐죽
-        continue;
-      }
-      const [cr, hid] = cvCell(i * 0.085, y * 0.16, 7104);
-      let v = 0.11 + hid * 0.09 + (vnoise(i * 0.2, y * 0.3, 7105) - 0.5) * 0.04;
-      if (cr < 0.06) v *= 0.45; else if (cr < 0.12) v += 0.035;   // 금 · 판 가장자리
-      const rim = Math.pow(clamp(1 - (edge[i] - y) / 10, 0, 1), 1.5), nh = Math.exp(-Math.max(0, Math.abs(i - hc) - hw) / 5) * day * (y < holeBot(i) + 3 ? 1 : 0.4);
-      v += rim * (0.15 + L * 0.5) + nh * 0.32;
-      cvPut(d, lw, i, y, cvC(clamp(v, 0, 1), clamp(rim * L * 2 - nh * 1.6, -1, 1)));
-    }
-  }
+  const dirt = mix('#5a4a3a', '#141a20', (1 - day) * 0.7), rock = mix('#7a7a70', '#141a20', (1 - day) * 0.7);
+  if (!(WK && WK.caveCeil(d, lw, sh, edge, day, night, [skyT, skyB, GR[2], GR[3], GR[4], dirt, rock]))) caveCeilPx(d, lw, sh, edge, day, night, skyT, skyB, GR, dirt, rock, holeBot, inHole, hc, hw);
   x.putImageData(id, 0, 0);
   // 구멍 가장자리 풀 · 덩굴 (하늘을 등지고 짙게, 아래로 늘어진 덩굴은 낮빛에 밝게)
   for (const [bx, by, r] of [[hx0 + 2, holeBot(hx0) - 9, 6], [hx0 + 9, holeBot(hx0 + 9) - 4, 4], [hx1 - 3, holeBot(hx1) - 8, 6], [hx1 - 11, holeBot(hx1 - 11) - 3, 4]]) pixTree(x, bx, by, r, GR, R, { blobs: 6 });
@@ -775,6 +760,33 @@ function caveCeil(ph, day) {
   // 빛줄기: 구멍에서 이끼 바닥까지 비스듬히 (가장자리는 옅게, 결 따라 밝고 어두운 줄)
   id = x.getImageData(0, 0, lw, H2); d = id.data;
   const { t: T, b: B } = CV.shaft, lc = ['#f4faea', '#fff0d2', '#ffd0a0', '#b8c8f0'][PHASES.indexOf(ph)] || '#f4faea', A0 = 0.07 + day * 0.13;
+  if (!(WK && WK.caveShaft(d, lw, sh, lc, A0))) caveShaftPx(d, lw, sh, lc, A0);
+  x.putImageData(id, 0, 0);
+  c.oy = -VOFF; c.drips = drips; c.shaftCol = lc;
+  c.shaft = { y0: T[2] - VOFF, y1: B[2] - VOFF, l0: T[0] + sh, r0: T[1] + sh, l1: B[0] + sh, r1: B[1] + sh };
+  return c;
+}
+function caveCeilPx(d, lw, sh, edge, day, night, skyT, skyB, GR, dirt, rock, holeBot, inHole, hc, hw) {   // 픽셀 (WASM: wasm/src/cave.rs ceil)
+  for (let i = 0; i < lw; i++) {
+    const [L] = cvLight(i - sh, edge[i] + 8);
+    for (let y = 0; y <= edge[i]; y++) {
+      if (inHole(i, y)) {   // 구멍 너머: 하늘 → 맞은편 구멍 테두리(풀 · 흙 · 낮빛 받은 바위)
+        const fr = holeBot(i) - y, gl = 7 + Math.round(vnoise(i * 0.25, 0.5, 7108) * 3);
+        const col = fr > gl ? (night && hash2(i, y, 7112) < 0.012 ? '#e8e0f0' : mix(skyT, skyB, clamp(y / holeBot(i) * 1.2, 0, 1))) : fr > gl - 2 ? GR[3 + (hash2(i, y, 7109) < 0.3 ? 1 : 0)] : fr > gl - 4 ? GR[2] : fr > 2 ? dirt : rock;
+        cvPut(d, lw, i, y, col); if (fr === gl + 1 && hash2(i, 3, 7110) < 0.45) cvPut(d, lw, i, y - Math.floor(hash2(i, 4, 7111) * 3), GR[3]);   // 풀잎이 하늘로 삐죽
+        continue;
+      }
+      const [cr, hid] = cvCell(i * 0.085, y * 0.16, 7104);
+      let v = 0.11 + hid * 0.09 + (vnoise(i * 0.2, y * 0.3, 7105) - 0.5) * 0.04;
+      if (cr < 0.06) v *= 0.45; else if (cr < 0.12) v += 0.035;   // 금 · 판 가장자리
+      const rim = Math.pow(clamp(1 - (edge[i] - y) / 10, 0, 1), 1.5), nh = Math.exp(-Math.max(0, Math.abs(i - hc) - hw) / 5) * day * (y < holeBot(i) + 3 ? 1 : 0.4);
+      v += rim * (0.15 + L * 0.5) + nh * 0.32;
+      cvPut(d, lw, i, y, cvC(clamp(v, 0, 1), clamp(rim * L * 2 - nh * 1.6, -1, 1)));
+    }
+  }
+}
+function caveShaftPx(d, lw, sh, lc, A0) {   // 픽셀 (WASM: wasm/src/cave.rs shaft)
+  const { t: T, b: B } = CV.shaft;
   for (let y = T[2]; y < B[2]; y++) {
     const k = (y - T[2]) / (B[2] - T[2]), l = T[0] + (B[0] - T[0]) * k + sh, r = T[1] + (B[1] - T[1]) * k + sh;
     for (let i = Math.floor(l); i <= Math.ceil(r); i++) {
@@ -783,10 +795,6 @@ function caveCeil(ph, day) {
       if (a > 0) cvBlend(d, lw, i, y, lc, a);
     }
   }
-  x.putImageData(id, 0, 0);
-  c.oy = -VOFF; c.drips = drips; c.shaftCol = lc;
-  c.shaft = { y0: T[2] - VOFF, y1: B[2] - VOFF, l0: T[0] + sh, r0: T[1] + sh, l1: B[0] + sh, r1: B[1] + sh };
-  return c;
 }
 
 // 앞쪽 바닥 (가까운 층 · 0.6배): 새끼줄 용암 바닥 · 등불 비친 물웅덩이 · 양옆 바위 더미 · 길가 돌받침 등불
