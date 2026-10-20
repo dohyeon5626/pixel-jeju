@@ -1367,6 +1367,11 @@ class Vortex { // 태풍 마이삭: 땅에서 말려 올라가 깔때기가 된 
     if (!this.cv) { this.cv = mk(cw, chh); this.cx2 = this.cv.getContext('2d'); this.id = this.cx2.createImageData(cw, chh); }
     if (this.imgT != null && this.t >= this.imgT && this.t - this.imgT < G.speed / 30) return [this.cv, ox, oy];   // 초당 30번만 새로 그림 (멈춤 화면에선 그대로)
     this.imgT = this.t;
+    if (!(WK && WK.funnel(this.id.data, cw, chh, ox, oy, this.x, this.t, this.spin, this.dir, this.big, form, full * (1 - easeOut(form)), full))) this.funnelPx(form, full, cw, chh, ox, oy);
+    this.cx2.putImageData(this.id, 0, 0);
+    return [this.cv, ox, oy];
+  }
+  funnelPx(form, full, cw, chh, ox, oy) {   // 픽셀 (WASM: wasm/src/funnel.rs)
     const d = this.id.data; d.fill(0);
     const hb = this.big ? 40 : 30, T = Vortex.PAL, DU = Vortex.DUST, SC = Vortex.CLOUD, sp = this.spin, t = this.t, low = full * (1 - easeOut(form));   // low: 내려오는 중인 깔때기 끝 (땅에서 위로 높이)
     const put = (x, y, col, a) => { if (x < 0 || y < 0 || x >= cw || y >= chh || a <= 0.02) return; const q = (y * cw + x) * 4, A = Math.min(1, a), c = rgb(col), a0 = d[q + 3] / 255, ao = A + a0 * (1 - A); for (let k = 0; k < 3; k++) d[q + k] = (c[k] * A + d[q + k] * a0 * (1 - A)) / ao; d[q + 3] = ao * 255; };
@@ -1413,8 +1418,6 @@ class Vortex { // 태풍 마이삭: 땅에서 말려 올라가 깔때기가 된 
         put(x, y, SC[clamp(Math.floor((0.55 + n * 0.5 - dep * 0.45) * SC.length), 0, SC.length - 1)], (1 - Math.pow(Math.abs(dx), 4)) * (this.big ? 1 : 0.85));
       } }
     }
-    this.cx2.putImageData(this.id, 0, 0);
-    return [this.cv, ox, oy];
   }
   draw() {
     const cx = this.x, form = clamp(this.t / this.formT, 0, 1);
