@@ -8,18 +8,23 @@
 
 let WK = null;
 const WK_READY = (async () => {
-  const url = 'wasm/jeju.wasm?v=274', imports = { m: { jsin: Math.sin, jcos: Math.cos, jasin: Math.asin, jexp: Math.exp, jpow: Math.pow, jhypot2: Math.hypot, jhypot3: Math.hypot } };
+  const url = 'wasm/jeju.wasm?v=275', imports = { m: { jsin: Math.sin, jcos: Math.cos, jasin: Math.asin, jexp: Math.exp, jpow: Math.pow, jhypot2: Math.hypot, jhypot3: Math.hypot } };
   try {
     let inst;
-    try { inst = (await WebAssembly.instantiateStreaming(fetch(url), imports)).instance; }
-    catch (e) { inst = (await WebAssembly.instantiate(await (await fetch(url)).arrayBuffer(), imports)).instance; }   // wasm MIME을 안 주는 서버
+    if (location.protocol === 'file:') {   // file://에선 fetch가 막혀서 base64 사본(wasm/jeju-wasm.js)을 스크립트로 읽음
+      await new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'wasm/jeju-wasm.js?v=275'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+      inst = (await WebAssembly.instantiate(Uint8Array.from(atob(window.JEJU_WASM), c => c.charCodeAt(0)), imports)).instance;
+    } else {
+      try { inst = (await WebAssembly.instantiateStreaming(fetch(url), imports)).instance; }
+      catch (e) { inst = (await WebAssembly.instantiate(await (await fetch(url)).arrayBuffer(), imports)).instance; }   // wasm MIME을 안 주는 서버
+    }
     WK = wkApi(inst.exports);
   } catch (e) { console.error('WASM을 불러오지 못함', e); }
 })();
-// WASM 없이는 배경 · 물리가 없어 시작할 수 없음 (file://로 열었거나 아주 오래된 브라우저)
+// WASM 없이는 배경 · 물리가 없어 시작할 수 없음 (아주 오래된 브라우저 등)
 function wasmMissing() {
   const d = document.createElement('div');
-  d.textContent = '게임 엔진(WebAssembly)을 불러오지 못했어요. 웹 서버로 열거나 새로 고침해 주세요.';
+  d.textContent = '게임 엔진(WebAssembly)을 불러오지 못했어요. 새로 고침하거나 다른 브라우저로 열어 주세요.';
   d.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;background:#201614;color:#fff5e0;font:16px Galmuri11,sans-serif;z-index:99';
   document.body.appendChild(d);
 }
