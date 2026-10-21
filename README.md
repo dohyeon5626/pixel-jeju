@@ -1,6 +1,6 @@
 # Pixel Jeju<img src="https://github.com/user-attachments/assets/cebc3654-c2ca-4ec8-bff1-4cfb7eac5fac" align=left width=100>
 
-![GitHub License](https://img.shields.io/github/license/dohyeon5626/pixel-jeju?style=flat&color=green) ![Event Bridge](https://img.shields.io/badge/🍊_자파리-green)
+![GitHub License](https://img.shields.io/github/license/dohyeon5626/pixel-jeju?style=flat&color=green) ![GitHub deployments](https://img.shields.io/github/deployments/dohyeon5626/pixel-jeju/github-pages?style=flat&label=page%20deploy&color=green) ![Website](https://img.shields.io/website?url=https%3A%2F%2Fpixel-jeju.dohyeon5626.com%2F&up_message=running&up_color=blue&down_message=not%20running&down_color=red&style=flat&label=game%20page)
 <br/><br/>
 
 **게임하기** : [Pixel Jeju](https://pixel-jeju.dohyeon5626.com/)  
